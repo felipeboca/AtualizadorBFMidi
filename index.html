@@ -4,12 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Atualizador BFMIDI2</title>
-    <!-- Carrega a biblioteca esptool-js -->
     <script type="module" src="https://unpkg.com/esp-web-tools@8.0.1/dist/web/install-button.js?module"></script>
     <style>
         :root {
-            --primary: #6200ea;
-            --success: #00c853;
+            --primary: #2563eb;
+            --success: #16a34a;
+            --error: #dc2626;
             --bg: #f3f4f6;
             --card-bg: #ffffff;
             --text: #1f2937;
@@ -28,99 +28,91 @@
         }
         .container {
             background: var(--card-bg);
-            padding: 2.5rem;
+            padding: 2rem;
             border-radius: 16px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
             max-width: 480px;
             width: 100%;
             text-align: center;
-            transition: transform 0.2s;
         }
-        h1 { margin: 0 0 0.5rem 0; color: #111; letter-spacing: -0.5px; }
-        p.subtitle { color: #6b7280; margin-bottom: 2rem; font-size: 0.95rem; }
+        h1 { margin: 0 0 0.5rem 0; color: #111; }
+        p.subtitle { color: #6b7280; margin-bottom: 1.5rem; font-size: 0.9rem; }
         
-        /* Status Bar */
         .status-bar {
-            background: #e0e7ff;
-            color: #3730a3;
-            padding: 10px;
+            background: #eff6ff;
+            color: #1e40af;
+            padding: 12px;
             border-radius: 8px;
             font-size: 0.9rem;
             margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
+            border: 1px solid #dbeafe;
         }
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            background: #999;
-            border-radius: 50%;
-            display: inline-block;
-        }
-        .status-connected .status-dot { background: var(--success); box-shadow: 0 0 0 2px rgba(0,200,83,0.2); }
         
-        /* Upload Area */
         .upload-area {
             border: 2px dashed #d1d5db;
             border-radius: 12px;
-            padding: 20px;
+            padding: 25px;
             cursor: pointer;
-            transition: all 0.2s;
             margin-bottom: 20px;
-            position: relative;
+            transition: all 0.2s;
+            background: #f9fafb;
         }
-        .upload-area:hover { border-color: var(--primary); background: #fbfbfe; }
+        .upload-area:hover { border-color: var(--primary); background: #fff; }
         .upload-area.has-file { border-color: var(--success); background: #f0fdf4; border-style: solid; }
-        .upload-area input { position: absolute; width: 100%; height: 100%; top: 0; left: 0; opacity: 0; cursor: pointer; }
-        .upload-icon { font-size: 24px; display: block; margin-bottom: 8px; }
-        .file-name { font-weight: 600; color: var(--success); word-break: break-all; }
-
-        /* Button */
+        .upload-area input { display: none; }
+        .upload-icon { font-size: 32px; display: block; margin-bottom: 10px; }
+        
         .btn {
             background-color: var(--primary);
             color: white;
             border: none;
-            padding: 16px;
+            padding: 18px;
             font-size: 16px;
             border-radius: 12px;
             cursor: pointer;
             width: 100%;
-            font-weight: 600;
-            box-shadow: 0 4px 6px rgba(98, 0, 234, 0.2);
-            transition: transform 0.1s, box-shadow 0.1s;
+            font-weight: bold;
+            box-shadow: 0 4px 6px rgba(37, 99, 235, 0.2);
+            transition: transform 0.1s;
         }
         .btn:disabled { background-color: #d1d5db; color: #9ca3af; box-shadow: none; cursor: not-allowed; }
         .btn:active { transform: scale(0.98); }
 
-        /* Log */
         #log {
-            margin-top: 25px;
-            font-family: 'SF Mono', 'Roboto Mono', monospace;
+            margin-top: 20px;
+            font-family: monospace;
             font-size: 11px;
             color: #4b5563;
             text-align: left;
-            background: #f9fafb;
-            padding: 12px;
+            background: #111827;
+            color: #10b981;
+            padding: 15px;
             border-radius: 8px;
-            height: 120px;
+            height: 150px;
             overflow-y: auto;
-            border: 1px solid #e5e7eb;
             display: none;
         }
-
-        /* Warnings */
+        
+        .instructions {
+            text-align: left;
+            background: #fff7ed;
+            border: 1px solid #ffedd5;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            color: #9a3412;
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
         .warning-box {
-            background: #fff3cd;
-            color: #856404;
+            background: #fee2e2;
+            color: #991b1b;
             padding: 12px;
             border-radius: 8px;
             margin-bottom: 20px;
-            font-size: 0.9rem;
             display: none;
-            border-left: 4px solid #ffc107;
-            text-align: left;
+            font-size: 0.9rem;
+            border: 1px solid #fecaca;
         }
     </style>
 </head>
@@ -128,207 +120,148 @@
 
     <div class="container">
         <h1>Atualizador BFMIDI</h1>
-        <p class="subtitle">Ferramenta de Atualização Universal (Mac & Win)</p>
+        <p class="subtitle">Ferramenta Oficial de Atualização</p>
 
-        <!-- Avisos de Navegador -->
         <div id="browser-warning" class="warning-box">
-            ⚠️ <b>Por favor, use Google Chrome.</b>
+            ⚠️ <b>Navegador Incompatível</b><br>
+            Por favor, abra este site no <b>Google Chrome</b>, Edge ou Opera.
         </div>
 
-        <!-- Status de Conexão -->
-        <div class="status-bar" id="status-bar">
-            <span class="status-dot"></span>
-            <span id="status-text">Aguardando arquivo...</span>
+        <div class="instructions">
+            <b>📢 Instruções de Atualização:</b>
+            <ol style="margin: 5px 0 0 15px; padding:0;">
+                <li>Desconecte o pedal do cabo USB.</li>
+                <li>Mantenha pressionado o botão <b>SETUP</b>.</li>
+                <li>Conecte o USB <b>sem soltar</b> o botão SETUP.</li>
+                <li>Solte o botão e use a ferramenta abaixo.</li>
+            </ol>
         </div>
 
-        <!-- Área de Upload -->
-        <div class="upload-area" id="upload-box">
+        <div class="upload-area" id="upload-box" onclick="document.getElementById('firmwareFile').click()">
             <input type="file" id="firmwareFile" accept=".bin">
-            <div id="upload-label-content">
+            <div id="upload-content">
                 <span class="upload-icon">📂</span>
-                <span>Clique para selecionar <b>app.bin</b></span>
+                <span>Clique aqui para selecionar o arquivo <b>app.bin</b></span>
             </div>
         </div>
 
-        <!-- Botão Principal -->
-        <button id="actionBtn" class="btn" disabled>Selecione o arquivo primeiro</button>
+        <div class="status-bar" id="status-text">Aguardando arquivo...</div>
+
+        <button id="actionBtn" class="btn" disabled>Carregue o arquivo primeiro</button>
         
-        <!-- Console de Log -->
         <div id="log"></div>
     </div>
 
-    <!-- Script Lógico -->
     <script type="module">
         import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.2.0/bundle.js';
 
-        // Elementos da UI
         const els = {
             btn: document.getElementById('actionBtn'),
             fileInput: document.getElementById('firmwareFile'),
             uploadBox: document.getElementById('upload-box'),
-            uploadContent: document.getElementById('upload-label-content'),
+            uploadContent: document.getElementById('upload-content'),
             log: document.getElementById('log'),
             warning: document.getElementById('browser-warning'),
-            statusText: document.getElementById('status-text'),
-            statusBar: document.getElementById('status-bar')
+            statusText: document.getElementById('status-text')
         };
 
         let firmwareData = null;
-        let device = null;
-        let transport = null;
-        let esploader = null;
 
-        // 1. Verificação Inicial de Compatibilidade
-        if (!navigator.serial) {
-            els.warning.style.display = 'block';
-            els.btn.style.display = 'none';
-        } else {
-            // Tenta detectar se já existe permissão (melhoria de UX)
-            checkPreviousPermissions();
-        }
+        if (!navigator.serial) els.warning.style.display = 'block';
 
-        async function checkPreviousPermissions() {
-            try {
-                const ports = await navigator.serial.getPorts();
-                if (ports.length > 0) {
-                    els.statusText.textContent = "Dispositivo detectado (Permissão existente)";
-                }
-            } catch (e) { console.log(e); }
-        }
-
-        // 2. Manipulação do Arquivo
         els.fileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
 
-            // Leitura do arquivo
             const reader = new FileReader();
             reader.onload = (ev) => {
                 firmwareData = ev.target.result;
-                
-                // Atualiza UI
                 els.uploadBox.classList.add('has-file');
-                els.uploadContent.innerHTML = `
-                    <span class="upload-icon">✅</span>
-                    <div class="file-name">${file.name}</div>
-                    <small style="color: #666">Pronto para gravar</small>
-                `;
-                
-                enableButton("Conectar e Atualizar");
-                els.statusText.textContent = "Arquivo carregado. Clique para conectar.";
+                els.uploadContent.innerHTML = `<span class="upload-icon">✅</span><b>${file.name}</b><br><small>Pronto para gravar</small>`;
+                els.statusText.textContent = "Arquivo OK! Clique no botão azul abaixo.";
+                els.btn.disabled = false;
+                els.btn.textContent = "CONECTAR E ATUALIZAR";
+                els.btn.style.backgroundColor = "#2563eb";
             };
             reader.readAsArrayBuffer(file);
         });
 
-        // 3. Ação Principal (Conectar e Gravar)
         els.btn.addEventListener('click', async () => {
             if (!firmwareData) return;
-
-            // Se já estiver gravando, ignora
-            if (els.btn.textContent.includes("Gravando")) return;
-
+            
             els.log.style.display = 'block';
-            log("Iniciando processo...");
+            log("Iniciando...");
+
+            let device, transport, esploader;
 
             try {
-                // Passo A: Conexão (Abre popup do navegador)
-                if (!device) {
-                    log("Solicitando porta serial...");
-                    device = await navigator.serial.requestPort();
-                    transport = new Transport(device);
-                }
-
-                els.statusBar.classList.add('status-connected');
-                els.statusText.textContent = "Conectado ao dispositivo";
-                disableButton("Preparando...");
-
-                // Passo B: Inicialização do ESP Loader
-                // Baudrate 921600 é rápido e estável para ESP32-S2
-                esploader = new ESPLoader(transport, 921600, null);
+                device = await navigator.serial.requestPort();
+                transport = new Transport(device);
                 
-                log("Conectando ao Bootloader...");
+                // Velocidade mantida em 115200 (Segura e testada por você)
+                esploader = new ESPLoader(transport, 115200, null);
+                
+                log("Conectando ao Pedal...");
+                els.statusText.textContent = "Conectando... (Olhe o Log)";
+                
                 await esploader.main_fn();
                 await esploader.flash_id();
 
-                log(`Chip detectado: ${esploader.chip.CHIP_NAME}`);
+                log("Chip detectado: " + esploader.chip.CHIP_NAME);
                 
-                // Validação de segurança básica
                 if (!esploader.chip.CHIP_NAME.includes("ESP32-S2")) {
-                    throw new Error("Este arquivo parece ser para ESP32-S2, mas o chip detectado é diferente.");
+                    throw new Error("Chip incorreto detectado! É um S2?");
                 }
 
-                // Passo C: Gravação
-                // O ENDEREÇO MÁGICO: 0x10000
+                els.btn.disabled = true;
+                els.btn.textContent = "GRAVANDO... NÃO DESCONECTE";
+                log("Gravando atualização em 0x10000...");
+
                 const fileArray = [{ data: firmwareData, address: 0x10000 }];
                 
-                log("--- INICIANDO GRAVAÇÃO NO ENDEREÇO 0x10000 ---");
-                log("Por favor, não desconecte o cabo.");
-
                 await esploader.write_flash(
                     fileArray,
-                    'keep',
-                    'keep',
-                    'keep',
-                    false,
-                    true,
+                    'keep', 'keep', 'keep', false, true,
                     (fileIndex, written, total) => {
                         const percent = Math.round((written / total) * 100);
-                        disableButton(`Gravando: ${percent}%`);
-                        els.statusText.textContent = `Enviando dados... ${percent}%`;
+                        els.btn.textContent = `GRAVANDO: ${percent}%`;
+                        els.statusText.textContent = `Enviando dados: ${percent}%`;
                     }
                 );
 
-                // Passo D: Finalização
-                log("Gravação concluída!");
-                els.statusText.textContent = "Sucesso! Reiniciando...";
+                log("SUCESSO!");
+                els.btn.textContent = "✅ ATUALIZAÇÃO CONCLUÍDA";
+                els.btn.style.backgroundColor = "#16a34a";
+                els.statusText.textContent = "Reinicie o pedal agora.";
                 
-                // Tenta resetar o chip via sinais DTR/RTS
-                await transport.setDTR(false);
-                await transport.setRTS(true);
-                await new Promise(r => setTimeout(r, 100));
-                await transport.setRTS(false);
-                
-                // UI de Sucesso
-                els.btn.style.backgroundColor = "#00c853";
-                enableButton("✅ Atualização Concluída!");
-                
-                // Limpa conexão para permitir nova gravação se necessário
                 await transport.disconnect();
-                device = null;
-                transport = null;
 
             } catch (e) {
                 console.error(e);
-                log(`ERRO: ${e.message}`);
-                els.statusBar.classList.remove('status-connected');
-                els.statusText.textContent = "Erro na conexão";
+                log("❌ ERRO: " + e.message);
                 
-                els.btn.style.backgroundColor = "#d32f2f";
-                enableButton("Tentar Novamente");
-                
-                if (transport) {
-                    await transport.disconnect();
-                    transport = null;
-                    device = null;
+                // Mensagem de erro ajustada para linguagem do usuário final
+                if (e.message.includes("Timeout") || e.message.includes("Failed to connect")) {
+                    log("--------------------------------");
+                    log("DICA: O pedal não estava em Modo de Atualização.");
+                    log("1. Desconecte o USB.");
+                    log("2. Mantenha o botão SETUP pressionado.");
+                    log("3. Conecte de novo segurando o botão.");
+                    log("4. Tente novamente.");
+                    log("--------------------------------");
+                    alert("Erro de conexão!\n\nVocê segurou o botão SETUP enquanto ligava o cabo USB?\nIsso é necessário para liberar a gravação.");
                 }
+
+                els.btn.disabled = false;
+                els.btn.textContent = "TENTAR NOVAMENTE";
+                els.btn.style.backgroundColor = "#dc2626";
+                if(transport) await transport.disconnect();
             }
         });
 
-        // Helpers de UI
         function log(msg) {
-            const time = new Date().toLocaleTimeString();
-            els.log.innerHTML += `[${time}] ${msg}<br>`;
+            els.log.innerHTML += `> ${msg}<br>`;
             els.log.scrollTop = els.log.scrollHeight;
-        }
-
-        function disableButton(text) {
-            els.btn.disabled = true;
-            els.btn.textContent = text;
-        }
-
-        function enableButton(text) {
-            els.btn.disabled = false;
-            els.btn.textContent = text;
         }
     </script>
 </body>
