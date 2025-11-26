@@ -24,7 +24,7 @@
 
     <div class="box">
         <h1>Atualizador BFMIDI</h1>
-        <p class="subtitle">Versão Estável (v14.0 - Timeout Fix)</p>
+        <p class="subtitle">Versão Clone Oficial (v15.0 - v0.2.0 Legacy)</p>
 
         <div class="file-box" onclick="document.getElementById('file').click()">
             <input type="file" id="file" accept=".bin" style="display: none">
@@ -38,7 +38,7 @@
         <div id="log" class="log">A aguardar início...</div>
     </div>
 
-    <!-- Usamos a versão 0.2.0 que provou ser capaz de comunicar no log -->
+    <!-- Usamos a versão 0.2.0 EXATA do site oficial, carregada como módulo -->
     <script type="module">
         import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.2.0/bundle.js';
 
@@ -46,7 +46,7 @@
         const logBox = document.getElementById('log');
         let firmwareData = null;
 
-        // Terminal Simulado
+        // Terminal Simulado (Igual ao do site oficial)
         const term = {
             clean: () => {},
             writeLine: (d) => { log("LIB: " + d); },
@@ -68,7 +68,7 @@
                 document.getElementById('file-label').style.color = '#2563eb';
                 btn.disabled = false;
                 btn.innerText = "LIGAR E ATUALIZAR";
-                log(`> Ficheiro carregado (${file.size} bytes). Clique no botão azul.`);
+                log(`> Ficheiro carregado. Clique no botão azul.`);
             };
             reader.readAsArrayBuffer(file);
         });
@@ -85,22 +85,17 @@
 
                 const transport = new Transport(device);
                 
-                // MANTEMOS 115200 (Funcionou no log até ao stub)
+                // Velocidade 115200 (Igual à sua tentativa manual com sucesso)
+                // A versão 0.2.0 usa baudrate como segundo argumento
                 const esploader = new ESPLoader(transport, 115200, term);
 
                 btn.disabled = true;
                 btn.innerText = "A LIGAR...";
-                log("> A conectar...");
+                log("> A conectar (Pode demorar)...");
 
-                // Conexão Padrão
+                // Tenta conectar sem argumentos (Padrão v0.2.0)
                 await esploader.main_fn();
-                
-                // Tenta ler o ID do chip para confirmar comunicação
-                try {
-                    await esploader.flash_id();
-                } catch (e) {
-                    log("> Aviso: Erro ao ler ID do flash, mas a continuar...");
-                }
+                await esploader.flash_id();
 
                 log("> ✅ Chip detetado: " + esploader.chip.CHIP_NAME);
                 log("> A preparar gravação...");
@@ -108,22 +103,15 @@
                 const fileArray = [{ data: firmwareData, address: 0x10000 }];
                 btn.innerText = "A GRAVAR... NÃO DESLIGUE";
                 
-                // AQUI ESTÁ A MUDANÇA:
-                // write_flash com parâmetros explícitos para evitar timeouts
-                // flash_size: 'keep' (evita deteção automática demorada)
-                // erase_all: false
-                // compress: true
+                // write_flash na v0.2.0 tem esta assinatura específica
                 await esploader.write_flash(
                     fileArray,
-                    'keep', // Flash size
-                    'keep', // Flash mode
-                    'keep', // Flash freq
-                    false,  // Erase all
-                    true,   // Compress (Importante: True para ser mais rápido e evitar timeout)
+                    'keep', 'keep', 'keep', false, true,
                     (fileIndex, written, total) => {
                         const percent = Math.round((written / total) * 100);
                         btn.innerText = `GRAVANDO: ${percent}%`;
-                        if (percent % 5 === 0) log(`> Progresso: ${percent}%`);
+                        // Log a cada 10%
+                        if (percent % 10 === 0) log(`> Progresso: ${percent}%`);
                     }
                 );
 
@@ -148,17 +136,18 @@
                 
                 log(`> ❌ ERRO: ${msg}`);
                 
-                if (msg.includes("Timeout")) {
-                    log("> ERRO DE TIMEOUT: A comunicação foi interrompida.");
-                    log("> Dica: Tente um cabo USB mais curto ou outra porta USB.");
-                    btn.innerText = "TENTAR NOVAMENTE";
-                    btn.disabled = false;
-                    btn.style.backgroundColor = "#dc2626";
-                } else if (msg.includes("NetworkError") || msg.includes("lost")) {
-                    log("> O pedal reiniciou. Verifique se atualizou.");
+                if (msg.includes("NetworkError") || msg.includes("lost")) {
+                    log("> O pedal reiniciou. Se a gravação terminou, está tudo bem.");
+                    log("> Se não, tente novamente (agora que ele já reiniciou).");
                     btn.innerText = "TENTAR NOVAMENTE";
                     btn.disabled = false;
                     btn.style.backgroundColor = "#f59e0b";
+                } else if (msg.includes("Timeout")) {
+                    log("> ERRO DE TIMEOUT.");
+                    log("> Tente desconectar e reconectar o USB e tente de novo.");
+                    btn.innerText = "TENTAR NOVAMENTE";
+                    btn.disabled = false;
+                    btn.style.backgroundColor = "#dc2626";
                 } else {
                     btn.innerText = "ERRO - TENTE DE NOVO";
                     btn.disabled = false;
