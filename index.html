@@ -99,7 +99,7 @@
 
     <div class="container">
         <h1>Atualizador BFMIDI</h1>
-        <p class="subtitle">Ferramenta Oficial (Automática v1.0)</p>
+        <p class="subtitle">Ferramenta Oficial (Automática v1.2)</p>
 
         <div id="browser-warning" class="warning-box">
             ⚠️ <b>Navegador Incompatível</b><br>
@@ -122,7 +122,7 @@
         <div id="log"></div>
     </div>
 
-    <!-- MUDANÇA: Voltamos à versão 0.5.4 (Moderna) mas sem a linha de log que causava o erro -->
+    <!-- Script tipo Módulo para suportar a versão 0.5.4 corretamente -->
     <script type="module">
         import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.5.4/bundle.js';
 
@@ -165,25 +165,32 @@
             let device, transport, esploader;
 
             try {
-                // 1. Solicita porta
+                // 1. Verificações
+                if (!navigator.serial) throw new Error("Web Serial não suportado neste navegador.");
+
+                // 2. Solicita porta
                 device = await navigator.serial.requestPort();
                 
-                // 2. Inicializa
+                if (!device) {
+                    throw new Error("Nenhum dispositivo foi selecionado.");
+                }
+
+                // 3. Inicializa
                 transport = new Transport(device);
-                // Velocidade 460800 é boa para S2, enableTracing false para performance
-                esploader = new ESPLoader(transport, 460800, null, false);
+                // 460800 é a velocidade ideal para S2 nativo
+                esploader = new ESPLoader(transport, 460800, null);
                 
                 log("Porta selecionada. A conectar...");
                 els.btn.disabled = true;
                 els.btn.textContent = "A LIGAR...";
                 
-                // Tenta conectar. A opção mode: 'default' na v0.5.4 lida melhor com o reset do S2
+                // Opção mode: 'default' é crucial para S2 na v0.5.4
                 await esploader.main_fn({ mode: 'default' });
                 await esploader.flash_id();
 
                 log("Chip identificado: " + esploader.chip.CHIP_NAME);
 
-                // 3. Gravação
+                // 4. Gravação
                 els.btn.textContent = "A GRAVAR... AGUARDE";
                 log("A gravar firmware...");
 
@@ -199,7 +206,7 @@
                     }
                 );
 
-                // 4. Finalização
+                // 5. Finalização
                 log("✅ SUCESSO! A reiniciar o pedal...");
                 els.btn.textContent = "ATUALIZAÇÃO CONCLUÍDA";
                 els.btn.style.backgroundColor = "#16a34a";
@@ -217,10 +224,10 @@
             } catch (e) {
                 console.error(e);
                 
-                // Tratamento de "Ejetado"
+                // Tratamento de erros
                 if (e.message.includes("NetworkError") || e.message.includes("lost") || e.message.includes("disconnect")) {
-                    log("\n⚠️ O dispositivo reiniciou (Normal).");
-                    log("Se a barra parou no meio, clique em TENTAR NOVAMENTE.");
+                    log("\n⚠️ O dispositivo reiniciou.");
+                    log("Isto é normal no ESP32-S2. Se a barra parou, tente de novo.");
                     els.btn.textContent = "TENTAR NOVAMENTE";
                     els.btn.style.backgroundColor = "#f59e0b"; 
                     els.btn.disabled = false;
