@@ -120,9 +120,9 @@
         <div id="log"></div>
     </div>
 
-    <!-- USANDO VERSÃO 0.4.6 - A MAIS ESTÁVEL E COMPATÍVEL -->
+    <!-- CORREÇÃO: Adicionado '?module' ao final do link para corrigir o erro 'undefined' -->
     <script type="module">
-        import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.4.6/bundle.js';
+        import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.4.6/bundle.js?module';
 
         const els = {
             btn: document.getElementById('actionBtn'),
@@ -168,7 +168,7 @@
                 transport = new Transport(device);
                 
                 // 2. Inicializa Loader
-                // ALTERADO PARA 115200 (Velocidade segura confirmada)
+                // Velocidade 115200 (Mais compatível)
                 esploader = new ESPLoader(transport, 115200, null);
                 
                 log("Conectando ao Pedal...");
