@@ -1,12 +1,13 @@
 <script type="module">
-    import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.5.3/bundle.js';
+    import { ESPLoader, Transport } from "https://unpkg.com/esptool-js@0.4.1/dist/web/index.js";
 
-    const dropArea = document.getElementById("drop-area");
-    const fileInput = document.getElementById("fileInput");
+    const fileInput = document.getElementById("file");
+    const fileBox = document.querySelector(".file-box");
     const fileLabel = document.getElementById("file-label");
-    const btn = document.getElementById('btn');
-    const logBox = document.getElementById('log');
-    const alertBox = document.getElementById('alert-box');
+    const btn = document.getElementById("btn");
+    const logBox = document.getElementById("log");
+    const alertBox = document.getElementById("alert-box");
+
     let firmwareData = null;
 
     const term = { clean(){}, writeLine(){}, write(){} };
@@ -17,126 +18,71 @@
     }
 
     function showAlert(msg) {
-        alertBox.style.display = 'block';
+        alertBox.style.display = "block";
         alertBox.innerHTML = `⚠️ <b>Nota:</b> ${msg}`;
     }
 
-    /* ------------------------------
-       CLIQUE E DRAG&DROP FIX
-    --------------------------------*/
-    dropArea.addEventListener("click", () => fileInput.click());
+    // Selecionar ficheiro
+    fileBox.onclick = () => fileInput.click();
 
-    ["dragenter", "dragover", "dragleave", "drop"].forEach(eventName => {
-        dropArea.addEventListener(eventName, e => {
-            e.preventDefault();
-            e.stopPropagation();
-        });
-    });
-
-    dropArea.addEventListener("dragover", () => dropArea.classList.add("dragover"));
-    dropArea.addEventListener("dragleave", () => dropArea.classList.remove("dragover"));
-    dropArea.addEventListener("drop", e => {
-        dropArea.classList.remove("dragover");
-        const file = e.dataTransfer.files[0];
-        if (file) processFile(file);
-    });
-
-    fileInput.addEventListener("change", e => {
+    fileInput.onchange = (e) => {
         const file = e.target.files[0];
-        if (file) processFile(file);
-    });
-
-    function processFile(file) {
-        if (!file.name.endsWith(".bin")) {
-            showAlert("Selecione um ficheiro .bin válido.");
-            return;
-        }
+        if (!file) return;
 
         const reader = new FileReader();
         reader.onload = ev => {
             firmwareData = ev.target.result;
-            fileLabel.innerHTML = `✅ <b>${file.name}</b> pronto!`;
-            fileLabel.style.color = "#2563eb";
+            fileLabel.innerHTML = `✅ <b>${file.name}</b> carregado`;
             btn.disabled = false;
             btn.innerText = "LIGAR E ATUALIZAR";
             log("Ficheiro carregado. Clique no botão azul.");
         };
         reader.readAsArrayBuffer(file);
-    }
+    };
 
-    /* ------------------------------
-       PATCH UNIVERSAL DO TRANSPORT
-    --------------------------------*/
-    function patchTransport(transport, device) {
-        // garante device em todas as camadas
-        transport.device = device;
-
-        // protege método getInfo
-        if (transport.device.getInfoSafe) return;
-
-        transport.device.getInfoSafe = true;        
-        const originalGetInfo = transport.device.getInfo?.bind(transport.device);
-
-        transport.device.getInfo = () => {
-            try {
-                return originalGetInfo ? originalGetInfo() : {};
-            } catch {
-                return {};
-            }
-        };
-
-        return transport;
-    }
-
-    /* ------------------------------
-       FLASH
-    --------------------------------*/
-    btn.addEventListener('click', async () => {
+    btn.onclick = async () => {
         if (!firmwareData) return;
 
         try {
             log("A solicitar porta USB...");
             const device = await navigator.serial.requestPort();
+            log("Porta capturada!");
 
-            let transport = new Transport(device);
-            transport = patchTransport(transport, device);
-
+            const transport = new Transport(device);
             const esploader = new ESPLoader(transport, 460800, term);
 
             btn.disabled = true;
             btn.innerText = "A LIGAR...";
-            log("A conectar...");
 
-            // conecta
-            await esploader.main_fn({ mode: 'default' });
-
-            // flash id (agora protegido)
+            await esploader.main_fn();
             await esploader.flash_id();
 
-            log("Chip detetado: " + esploader.chip.CHIP_NAME);
+            log("Chip detetado: " + esploader.chipName);
 
             btn.innerText = "A GRAVAR...";
 
             await esploader.write_flash(
                 [{ data: firmwareData, address: 0x10000 }],
-                'keep', 'keep', 'keep',
+                "keep", "keep", "keep",
                 false, true,
                 (i, written, total) => {
-                    const p = Math.round(written / total * 100);
+                    const p = Math.round((written / total) * 100);
                     btn.innerText = `GRAVANDO ${p}%`;
                 }
             );
 
-            log("Gravação concluída.");
+            log("Gravação concluída!");
             btn.innerText = "SUCESSO!";
             btn.style.background = "#16a34a";
             btn.disabled = false;
 
         } catch (err) {
+            console.error(err);
             log("Erro: " + err.message);
+            showAlert(err.message);
             btn.innerText = "ERRO — TENTAR NOVAMENTE";
-            btn.disabled = false;
             btn.style.background = "#dc2626";
+            btn.disabled = false;
         }
-    });
+    };
 </script>
