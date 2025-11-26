@@ -26,7 +26,7 @@
 
     <div class="box">
         <h1>Atualizador BFMIDI</h1>
-        <p class="subtitle">Versão Definitiva (v4.0 Universal)</p>
+        <p class="subtitle">Versão Definitiva (JSPM Loader)</p>
 
         <div id="alert-box" class="alert"></div>
 
@@ -42,16 +42,16 @@
         <div id="log" class="log">A aguardar início...</div>
     </div>
 
-    <!-- IMPORTAÇÃO ROBUSTA: Importa tudo (*) para evitar erros de estrutura -->
+    <!-- O SEGREDO: Usar jspm.dev para garantir que a biblioteca carrega sem erros de sintaxe -->
     <script type="module">
-        import * as esptoolLib from 'https://cdn.jsdelivr.net/npm/esptool-js@0.5.4/+esm';
+        import { ESPLoader, Transport } from 'https://jspm.dev/esptool-js@0.5.4';
 
         const btn = document.getElementById('btn');
         const logBox = document.getElementById('log');
         const alertBox = document.getElementById('alert-box');
         let firmwareData = null;
 
-        // Terminal simulado
+        // Terminal simulado (evita crashes internos)
         const term = {
             clean: () => {},
             writeLine: (data) => { /* console.log(data); */ },
@@ -68,23 +68,13 @@
             alertBox.innerHTML = `⚠️ <b>Nota:</b> ${msg}`;
         }
 
-        // --- RESOLUÇÃO DE CLASSES ---
-        // O segredo: Procura as classes onde quer que elas estejam (raiz ou default)
-        const ESPLoader = esptoolLib.ESPLoader || (esptoolLib.default ? esptoolLib.default.ESPLoader : null);
-        const Transport = esptoolLib.Transport || (esptoolLib.default ? esptoolLib.default.Transport : null);
-
-        if (!ESPLoader || !Transport) {
-            log("❌ ERRO FATAL: Falha ao carregar biblioteca esptool-js.");
-            log("Estrutura recebida: " + Object.keys(esptoolLib).join(", "));
-        }
-
         document.getElementById('file').addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
             const reader = new FileReader();
             reader.onload = (ev) => {
                 firmwareData = ev.target.result;
-                document.getElementById('file-label').innerHTML = `✅ <b>${file.name}</b> carregado!`;
+                document.getElementById('file-label').innerHTML = `✅ <b>${file.name}</b> pronto!`;
                 document.getElementById('file-label').style.color = '#2563eb';
                 btn.disabled = false;
                 btn.innerText = "LIGAR E ATUALIZAR";
@@ -102,22 +92,24 @@
                 // 1. Porta USB
                 log("A solicitar porta USB...");
                 const device = await navigator.serial.requestPort();
-                log("Porta selecionada. A iniciar...");
+                log("Porta selecionada! A iniciar...");
 
-                // 2. Inicializar Classes (Agora com garantia que existem)
+                // 2. Inicialização (usando imports JSPM limpos)
                 const transport = new Transport(device);
-                const esploader = new ESPLoader(transport, 460800, term); // 460800 ideal para S2
+                // 460800 baud rate - O ponto ideal para o S2
+                const esploader = new ESPLoader(transport, 460800, term);
 
                 btn.disabled = true;
                 btn.innerText = "A LIGAR...";
-                log("A conectar (Modo S2)...");
+                log("A conectar (Pode reiniciar o pedal)...");
 
                 // 3. Conexão
+                // 'default' permite que o ESP32-S2 faça o reset necessário
                 await esploader.main_fn({ mode: 'default' });
                 await esploader.flash_id();
 
                 log("✅ Chip detetado: " + esploader.chip.CHIP_NAME);
-                log("A preparar gravação...");
+                log("A preparar gravação em 0x10000...");
 
                 // 4. Gravação
                 const fileArray = [{ data: firmwareData, address: 0x10000 }];
@@ -128,8 +120,8 @@
                     'keep', 'keep', 'keep', false, true,
                     (fileIndex, written, total) => {
                         const percent = Math.round((written / total) * 100);
-                        btn.innerText = `A GRAVAR: ${percent}%`;
-                        if (percent % 10 === 0) log(`Progresso: ${percent}%`);
+                        btn.innerText = `GRAVANDO: ${percent}%`;
+                        if (percent % 5 === 0) log(`Progresso: ${percent}%`);
                     }
                 );
 
@@ -140,27 +132,38 @@
                 btn.disabled = false;
 
                 // Reset final
-                await transport.setDTR(false);
-                await transport.setRTS(true);
-                await new Promise(r => setTimeout(r, 100));
-                await transport.setRTS(false);
+                try {
+                    await transport.setDTR(false);
+                    await transport.setRTS(true);
+                    await new Promise(r => setTimeout(r, 100));
+                    await transport.setRTS(false);
+                } catch(e) {}
+                
                 await transport.disconnect();
 
             } catch (e) {
                 console.error(e);
                 const msg = e.message || e.toString();
 
+                // O ERRO CLÁSSICO DO S2:
                 if (msg.includes("NetworkError") || msg.includes("lost") || msg.includes("disconnect")) {
-                    log("\n⚠️ O PEDAL REINICIOU (Isto é normal).");
-                    log("O Mac ejetou o disco porque entrou em modo flash.");
-                    log("👉 CLIQUE EM 'CONTINUAR' PARA FINALIZAR.");
+                    log("\n⚠️ O PEDAL REINICIOU (EJETADO).");
+                    log("Isto é bom sinal! Entrou em modo flash.");
+                    log("👉 Clique em 'CONTINUAR' e selecione a porta de novo.");
                     
-                    showAlert("O dispositivo reiniciou corretamente. Clique em CONTINUAR e selecione a porta novamente.");
+                    showAlert("O dispositivo reiniciou para atualização. Clique em CONTINUAR e selecione a porta USB novamente.");
                     
                     btn.innerText = "CONTINUAR (TENTAR NOVAMENTE)";
                     btn.style.backgroundColor = "#f59e0b";
                     btn.disabled = false;
-                } else {
+                } 
+                else if (msg.includes("undefined")) {
+                    log("❌ Erro interno. Tente desconectar e reconectar o cabo.");
+                    btn.innerText = "TENTAR DE NOVO";
+                    btn.style.backgroundColor = "#dc2626";
+                    btn.disabled = false;
+                }
+                else {
                     log("❌ ERRO: " + msg);
                     btn.innerText = "ERRO - TENTE DE NOVO";
                     btn.style.backgroundColor = "#dc2626";
