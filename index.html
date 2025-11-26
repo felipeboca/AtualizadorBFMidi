@@ -1,88 +1,152 @@
-<script type="module">
-    import { ESPLoader, Transport } from "https://unpkg.com/esptool-js@0.4.1/dist/web/index.js";
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atualizador BFMIDI (Clone Oficial)</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f0f2f5; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
+        .box { background: white; padding: 2.5rem; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 600px; text-align: center; }
+        h1 { color: #111; margin-bottom: 0.5rem; }
+        .subtitle { color: #666; margin-bottom: 2rem; font-size: 0.95rem; }
+        
+        .btn { background: #2563eb; color: white; border: none; padding: 16px; width: 100%; border-radius: 10px; font-weight: 600; cursor: pointer; font-size: 16px; margin-top: 15px; transition: all 0.2s; }
+        .btn:disabled { background: #e2e8f0; color: #94a3b8; cursor: not-allowed; }
+        .btn:hover:not(:disabled) { background: #1d4ed8; }
+        
+        .log { background: #1e1e1e; color: #e2e8f0; padding: 15px; border-radius: 10px; text-align: left; font-family: 'SF Mono', monospace; height: 300px; overflow-y: auto; margin-top: 20px; font-size: 11px; line-height: 1.5; white-space: pre-wrap; border: 1px solid #333; }
+        
+        .file-box { border: 2px dashed #cbd5e1; padding: 30px; border-radius: 12px; margin: 20px 0; cursor: pointer; background: #f8fafc; transition: all 0.2s; }
+        .file-box:hover { background: #eff6ff; border-color: #2563eb; }
+    </style>
+</head>
+<body>
 
-    const fileInput = document.getElementById("file");
-    const fileBox = document.querySelector(".file-box");
-    const fileLabel = document.getElementById("file-label");
-    const btn = document.getElementById("btn");
-    const logBox = document.getElementById("log");
-    const alertBox = document.getElementById("alert-box");
+    <div class="box">
+        <h1>Atualizador BFMIDI</h1>
+        <p class="subtitle">Versão Clone Oficial (v12.0 - v0.2.0)</p>
 
-    let firmwareData = null;
+        <div class="file-box" onclick="document.getElementById('file').click()">
+            <input type="file" id="file" accept=".bin" style="display: none">
+            <div id="file-label">
+                <div style="font-size: 24px; margin-bottom: 10px">📂</div>
+                Clique para selecionar o ficheiro <b>app.bin</b>
+            </div>
+        </div>
 
-    const term = { clean(){}, writeLine(){}, write(){} };
+        <button id="btn" class="btn" disabled>Carregue o ficheiro primeiro</button>
+        <div id="log" class="log">A aguardar início...</div>
+    </div>
 
-    function log(msg) {
-        logBox.innerHTML += `> ${msg}\n`;
-        logBox.scrollTop = logBox.scrollHeight;
-    }
+    <!-- Usamos a versão 0.2.0 EXATA do site oficial, carregada como módulo -->
+    <script type="module">
+        import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.2.0/bundle.js';
 
-    function showAlert(msg) {
-        alertBox.style.display = "block";
-        alertBox.innerHTML = `⚠️ <b>Nota:</b> ${msg}`;
-    }
+        const btn = document.getElementById('btn');
+        const logBox = document.getElementById('log');
+        let firmwareData = null;
 
-    // Selecionar ficheiro
-    fileBox.onclick = () => fileInput.click();
-
-    fileInput.onchange = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = ev => {
-            firmwareData = ev.target.result;
-            fileLabel.innerHTML = `✅ <b>${file.name}</b> carregado`;
-            btn.disabled = false;
-            btn.innerText = "LIGAR E ATUALIZAR";
-            log("Ficheiro carregado. Clique no botão azul.");
+        // Terminal Simulado (Igual ao do site oficial)
+        const term = {
+            clean: () => {},
+            writeLine: (d) => { log("LIB: " + d); },
+            write: (d) => { /* log("RAW: " + d); */ }
         };
-        reader.readAsArrayBuffer(file);
-    };
 
-    btn.onclick = async () => {
-        if (!firmwareData) return;
-
-        try {
-            log("A solicitar porta USB...");
-            const device = await navigator.serial.requestPort();
-            log("Porta capturada!");
-
-            const transport = new Transport(device);
-            const esploader = new ESPLoader(transport, 460800, term);
-
-            btn.disabled = true;
-            btn.innerText = "A LIGAR...";
-
-            await esploader.main_fn();
-            await esploader.flash_id();
-
-            log("Chip detetado: " + esploader.chipName);
-
-            btn.innerText = "A GRAVAR...";
-
-            await esploader.write_flash(
-                [{ data: firmwareData, address: 0x10000 }],
-                "keep", "keep", "keep",
-                false, true,
-                (i, written, total) => {
-                    const p = Math.round((written / total) * 100);
-                    btn.innerText = `GRAVANDO ${p}%`;
-                }
-            );
-
-            log("Gravação concluída!");
-            btn.innerText = "SUCESSO!";
-            btn.style.background = "#16a34a";
-            btn.disabled = false;
-
-        } catch (err) {
-            console.error(err);
-            log("Erro: " + err.message);
-            showAlert(err.message);
-            btn.innerText = "ERRO — TENTAR NOVAMENTE";
-            btn.style.background = "#dc2626";
-            btn.disabled = false;
+        function log(msg) {
+            logBox.innerHTML += `${msg}\n`;
+            logBox.scrollTop = logBox.scrollHeight;
         }
-    };
-</script>
+
+        document.getElementById('file').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                firmwareData = ev.target.result;
+                document.getElementById('file-label').innerHTML = `✅ <b>${file.name}</b> pronto!`;
+                document.getElementById('file-label').style.color = '#2563eb';
+                btn.disabled = false;
+                btn.innerText = "LIGAR E ATUALIZAR";
+                log(`> Ficheiro carregado. Clique no botão azul.`);
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        btn.addEventListener('click', async () => {
+            if(btn.innerText.includes("A LIGAR") || btn.innerText.includes("A GRAVAR")) return;
+
+            try {
+                if (!navigator.serial) throw new Error("Navegador incompatível. Use Chrome/Edge.");
+
+                log("> A solicitar porta USB...");
+                const device = await navigator.serial.requestPort();
+                log("> Porta selecionada.");
+
+                const transport = new Transport(device);
+                
+                // Velocidade 460800 (Igual ao log de sucesso)
+                const esploader = new ESPLoader(transport, 460800, term);
+
+                btn.disabled = true;
+                btn.innerText = "A LIGAR...";
+                log("> A conectar (Pode demorar)...");
+
+                // No site oficial (v0.2.0), main_fn não aceita objeto, apenas callback ou nada
+                // Deixamos vazio para usar o padrão
+                await esploader.main_fn();
+                await esploader.flash_id();
+
+                log("> ✅ Chip detetado: " + esploader.chip.CHIP_NAME);
+                log("> A preparar gravação...");
+
+                const fileArray = [{ data: firmwareData, address: 0x10000 }];
+                btn.innerText = "A GRAVAR... NÃO DESLIGUE";
+                
+                await esploader.write_flash(
+                    fileArray,
+                    'keep', 'keep', 'keep', false, true,
+                    (fileIndex, written, total) => {
+                        const percent = Math.round((written / total) * 100);
+                        btn.innerText = `GRAVANDO: ${percent}%`;
+                        // Log a cada 5%
+                        if (percent % 5 === 0) log(`> Progresso: ${percent}%`);
+                    }
+                );
+
+                log("> ✅ GRAVAÇÃO CONCLUÍDA!");
+                btn.innerText = "SUCESSO! REINICIE O PEDAL";
+                btn.style.backgroundColor = "#16a34a";
+                btn.disabled = false;
+
+                // Reset final
+                try {
+                    await transport.setDTR(false);
+                    await transport.setRTS(true);
+                    await new Promise(r => setTimeout(r, 100));
+                    await transport.setRTS(false);
+                } catch(e) {}
+                
+                await transport.disconnect();
+
+            } catch (e) {
+                console.error(e);
+                const msg = e.message || e.toString();
+                
+                log(`> ❌ ERRO: ${msg}`);
+                
+                if (msg.includes("NetworkError") || msg.includes("lost")) {
+                    log("> O pedal reiniciou. Se a gravação terminou, está tudo bem.");
+                    btn.innerText = "TENTAR NOVAMENTE";
+                    btn.disabled = false;
+                    btn.style.backgroundColor = "#f59e0b";
+                } else {
+                    btn.innerText = "ERRO - TENTE DE NOVO";
+                    btn.disabled = false;
+                    btn.style.backgroundColor = "#dc2626";
+                }
+            }
+        });
+    </script>
+</body>
+</html>
