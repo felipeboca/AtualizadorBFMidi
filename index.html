@@ -26,7 +26,7 @@
 
     <div class="box">
         <h1>Atualizador BFMIDI</h1>
-        <p class="subtitle">Versão Definitiva (v8.0 Módulo Seguro)</p>
+        <p class="subtitle">Versão Definitiva (v9.0 ESM.SH)</p>
 
         <div id="alert-box" class="alert"></div>
 
@@ -42,22 +42,16 @@
         <div id="log" class="log">A aguardar início...</div>
     </div>
 
-    <!-- IMPORTANTE: type="module" é obrigatório para esta biblioteca -->
+    <!-- NOVO FORNECEDOR DE BIBLIOTECA: esm.sh (Mais fiável para Chrome) -->
     <script type="module">
-        // Importamos TUDO (*) para inspecionar o conteúdo
-        import * as esptoolLib from 'https://unpkg.com/esptool-js@0.5.4/bundle.js';
+        import { ESPLoader, Transport } from 'https://esm.sh/esptool-js@0.5.4';
 
         const btn = document.getElementById('btn');
         const logBox = document.getElementById('log');
         const alertBox = document.getElementById('alert-box');
         let firmwareData = null;
 
-        // --- LÓGICA DE RESOLUÇÃO DE IMPORTAÇÃO ---
-        // Tenta encontrar as classes quer estejam na raiz, quer dentro de 'default'
-        const ESPLoader = esptoolLib.ESPLoader || (esptoolLib.default ? esptoolLib.default.ESPLoader : null);
-        const Transport = esptoolLib.Transport || (esptoolLib.default ? esptoolLib.default.Transport : null);
-
-        // Terminal Simulado (Previne erros internos da biblioteca)
+        // Terminal Simulado
         const term = {
             clean: () => {},
             writeLine: (data) => { /* console.log(data); */ },
@@ -72,16 +66,6 @@
         function showAlert(msg) {
             alertBox.style.display = 'block';
             alertBox.innerHTML = `⚠️ <b>Nota:</b> ${msg}`;
-        }
-
-        // Verificação inicial crítica
-        if (!ESPLoader || !Transport) {
-            log("❌ ERRO CRÍTICO DE BIBLIOTECA!");
-            log("Não foi possível carregar o esptool-js.");
-            console.error("Conteúdo da biblioteca:", esptoolLib);
-            btn.innerText = "ERRO DE SISTEMA";
-        } else {
-            log("Biblioteca carregada com sucesso (v0.5.4).");
         }
 
         document.getElementById('file').addEventListener('change', (e) => {
@@ -100,7 +84,7 @@
         });
 
         btn.addEventListener('click', async () => {
-            // Evita duplo clique
+            // Evita clique duplo
             if(btn.innerText.includes("A LIGAR") || btn.innerText.includes("A GRAVAR")) return;
 
             try {
@@ -108,28 +92,33 @@
                     throw new Error("Navegador sem suporte Serial. Use Chrome ou Edge.");
                 }
 
-                // 1. Seleção de Porta
+                // 1. Pedir Porta
                 log("A solicitar porta USB...");
                 const device = await navigator.serial.requestPort();
-                log("Porta selecionada. A iniciar...");
+                
+                if (!device) throw new Error("Nenhum dispositivo selecionado.");
+                log("Porta selecionada. A preparar...");
 
-                // 2. Inicialização
+                // 2. Inicialização (Com patch de segurança)
                 const transport = new Transport(device);
-                // 460800 é a velocidade ideal para S2 Nativo
-                const esploader = new ESPLoader(transport, 460800, term);
+                
+                // FIX: Forçar a atribuição do dispositivo se a biblioteca falhar
+                if (!transport.device) {
+                    console.log("Aplicando patch manual no Transport...");
+                    transport.device = device;
+                }
+
+                // Velocidade 115200 é mais lenta mas mais segura para evitar erros de buffer
+                const esploader = new ESPLoader(transport, 115200, term);
 
                 btn.disabled = true;
                 btn.innerText = "A LIGAR...";
                 log("A conectar (Modo S2)...");
 
                 // 3. Conexão
-                try {
-                    await esploader.main_fn({ mode: 'default' });
-                    await esploader.flash_id();
-                } catch (err) {
-                    // Re-lançar erro para ser apanhado pelo catch geral
-                    throw err;
-                }
+                // 'default' mode com a versão 0.5.4 lida com o reset do S2
+                await esploader.main_fn({ mode: 'default' });
+                await esploader.flash_id();
 
                 log("✅ Chip detetado: " + esploader.chip.CHIP_NAME);
                 log("A preparar gravação...");
@@ -143,11 +132,12 @@
                     'keep', 'keep', 'keep', false, true,
                     (fileIndex, written, total) => {
                         const percent = Math.round((written / total) * 100);
-                        btn.innerText = `A GRAVAR: ${percent}%`;
+                        btn.innerText = `GRAVANDO: ${percent}%`;
                         if (percent % 5 === 0) log(`Progresso: ${percent}%`);
                     }
                 );
 
+                // 5. Sucesso
                 log("✅ GRAVAÇÃO CONCLUÍDA!");
                 btn.innerText = "SUCESSO! REINICIE O PEDAL";
                 btn.style.backgroundColor = "#16a34a";
@@ -167,10 +157,11 @@
                 console.error(e);
                 const msg = e.message || e.toString();
 
+                // Tratamento de erros do S2
                 if (msg.includes("NetworkError") || msg.includes("lost") || msg.includes("disconnect")) {
                     log("\n⚠️ O PEDAL REINICIOU (Normal).");
-                    log("O Mac detetou a reinicialização do USB.");
-                    log("👉 Clique em 'CONTINUAR' para finalizar.");
+                    log("O Mac ejetou o disco porque entrou em modo flash.");
+                    log("👉 CLIQUE EM 'CONTINUAR' PARA FINALIZAR.");
                     
                     showAlert("O dispositivo reiniciou. Clique em CONTINUAR e selecione a porta novamente.");
                     
