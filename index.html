@@ -3,196 +3,95 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Atualizador BFMIDI2</title>
-
+    <title>Atualizador BFMIDI</title>
     <style>
-        :root {
-            --primary: #2563eb;
-            --success: #16a34a;
-            --error: #dc2626;
-            --bg: #f3f4f6;
-            --card-bg: #ffffff;
-            --text: #1f2937;
-        }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--bg);
-            color: var(--text);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            margin: 0;
-            padding: 20px;
-        }
-        .container {
-            background: var(--card-bg);
-            padding: 2.5rem;
-            border-radius: 16px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
-            max-width: 500px;
-            width: 100%;
-            text-align: center;
-        }
-        h1 { margin: 0 0 0.5rem 0; color: #111; letter-spacing: -0.5px; }
-        p.subtitle { color: #6b7280; margin-bottom: 2rem; }
-        
-        .upload-area {
-            border: 2px dashed #cbd5e1;
-            border-radius: 12px;
-            padding: 30px;
-            cursor: pointer;
-            margin-bottom: 25px;
-            transition: all 0.2s;
-            background: #f8fafc;
-        }
-        .upload-area:hover { border-color: var(--primary); background: #eff6ff; }
-        .upload-area.has-file { border-color: var(--success); background: #f0fdf4; border-style: solid; }
-        .upload-area input { display: none; }
-        
-        .btn {
-            background-color: var(--primary);
-            color: white;
-            border: none;
-            padding: 18px;
-            font-size: 16px;
-            border-radius: 12px;
-            cursor: pointer;
-            width: 100%;
-            font-weight: 600;
-            transition: transform 0.1s;
-            box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
-        }
-        .btn:disabled { background-color: #cbd5e1; color: #94a3b8; cursor: not-allowed; box-shadow: none; }
-        .btn:active { transform: scale(0.98); }
-
-        #log {
-            margin-top: 25px;
-            font-family: 'SF Mono', Consolas, monospace;
-            font-size: 12px;
-            text-align: left;
-            background: #0f172a;
-            color: #4ade80;
-            padding: 15px;
-            border-radius: 8px;
-            height: 200px;
-            overflow-y: auto;
-            display: none;
-            border: 1px solid #1e293b;
-            white-space: pre-wrap;
-        }
-        
-        .warning-box {
-            background: #fee2e2;
-            color: #991b1b;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            display: none;
-            font-size: 0.9rem;
-            border: 1px solid #fecaca;
-        }
+        body { font-family: sans-serif; background: #f0f2f5; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+        .box { background: white; padding: 2rem; border-radius: 1rem; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 480px; text-align: center; }
+        h1 { color: #1a1a1a; margin-bottom: 0.5rem; }
+        .btn { background: #2563eb; color: white; border: none; padding: 15px; width: 100%; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 16px; margin-top: 10px; }
+        .btn:disabled { background: #ccc; cursor: not-allowed; }
+        .log { background: #1e1e1e; color: #00ff00; padding: 15px; border-radius: 8px; text-align: left; font-family: monospace; height: 200px; overflow-y: auto; margin-top: 20px; font-size: 12px; }
+        .file-box { border: 2px dashed #ccc; padding: 20px; border-radius: 8px; margin: 20px 0; cursor: pointer; }
+        .file-box:hover { background: #f9f9f9; border-color: #2563eb; }
     </style>
 </head>
 <body>
 
-    <div class="container">
+    <div class="box">
         <h1>Atualizador BFMIDI</h1>
-        <p class="subtitle">Ferramenta Oficial (Automática v1.2)</p>
+        <p style="color: #666">Versão Final (Módulo v1.3)</p>
 
-        <div id="browser-warning" class="warning-box">
-            ⚠️ <b>Navegador Incompatível</b><br>
-            Use <b>Google Chrome</b>, Edge ou Opera.
+        <div class="file-box" onclick="document.getElementById('file').click()">
+            <input type="file" id="file" accept=".bin" style="display: none">
+            <div id="file-label">📂 Clique para selecionar <b>app.bin</b></div>
         </div>
 
-        <div class="upload-area" id="upload-box" onclick="document.getElementById('firmwareFile').click()">
-            <input type="file" id="firmwareFile" accept=".bin">
-            <div id="upload-content">
-                <div style="font-size: 32px; margin-bottom: 10px">📂</div>
-                <div style="font-weight: 500">Clique para selecionar o <b>app.bin</b></div>
-                <div style="color: #64748b; font-size: 0.9em; margin-top: 5px">O resto é automático</div>
-            </div>
-        </div>
-
-        <div id="status-text" style="margin-bottom: 15px; color: #64748b; font-size: 0.9em">Aguardando arquivo...</div>
-
-        <button id="actionBtn" class="btn" disabled>Carregue o arquivo primeiro</button>
-        
-        <div id="log"></div>
+        <button id="btn" class="btn" disabled>Aguardando ficheiro...</button>
+        <div id="log" class="log">A aguardar início...</div>
     </div>
 
-    <!-- Script tipo Módulo para suportar a versão 0.5.4 corretamente -->
+    <!-- MUDANÇA TOTAL: Usando apenas Módulo, sem scripts globais -->
     <script type="module">
+        // Importando diretamente da fonte oficial
         import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.5.4/bundle.js';
 
-        const els = {
-            btn: document.getElementById('actionBtn'),
-            fileInput: document.getElementById('firmwareFile'),
-            uploadBox: document.getElementById('upload-box'),
-            uploadContent: document.getElementById('upload-content'),
-            log: document.getElementById('log'),
-            warning: document.getElementById('browser-warning'),
-            statusText: document.getElementById('status-text')
-        };
-
+        const btn = document.getElementById('btn');
+        const logBox = document.getElementById('log');
         let firmwareData = null;
 
-        if (!navigator.serial) els.warning.style.display = 'block';
+        function log(msg) {
+            logBox.innerHTML += `> ${msg}\n`;
+            logBox.scrollTop = logBox.scrollHeight;
+        }
 
-        els.fileInput.addEventListener('change', (e) => {
+        document.getElementById('file').addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
-
             const reader = new FileReader();
             reader.onload = (ev) => {
                 firmwareData = ev.target.result;
-                els.uploadBox.classList.add('has-file');
-                els.uploadContent.innerHTML = `<div style="font-size: 32px; margin-bottom: 10px">✅</div><b>${file.name}</b><br><small>Pronto para gravar</small>`;
-                els.statusText.textContent = "Arquivo carregado com sucesso.";
-                els.btn.disabled = false;
-                els.btn.textContent = "CONECTAR E ATUALIZAR";
+                document.getElementById('file-label').innerHTML = `✅ <b>${file.name}</b> pronto!`;
+                btn.disabled = false;
+                btn.innerText = "CONECTAR E ATUALIZAR";
+                btn.style.backgroundColor = "#2563eb";
+                log("Ficheiro carregado. Clique no botão azul.");
             };
             reader.readAsArrayBuffer(file);
         });
 
-        els.btn.addEventListener('click', async () => {
-            if (!firmwareData) return;
-            
-            els.log.style.display = 'block';
-            log("A iniciar processo...");
-
-            let device, transport, esploader;
-
+        btn.addEventListener('click', async () => {
             try {
-                // 1. Verificações
-                if (!navigator.serial) throw new Error("Web Serial não suportado neste navegador.");
-
-                // 2. Solicita porta
-                device = await navigator.serial.requestPort();
-                
-                if (!device) {
-                    throw new Error("Nenhum dispositivo foi selecionado.");
+                // 1. Verificar suporte
+                if (!navigator.serial) {
+                    throw new Error("O seu navegador não suporta Web Serial. Use o Chrome.");
                 }
 
-                // 3. Inicializa
-                transport = new Transport(device);
-                // 460800 é a velocidade ideal para S2 nativo
-                esploader = new ESPLoader(transport, 460800, null);
+                // 2. Pedir Porta
+                log("A solicitar porta USB...");
+                const device = await navigator.serial.requestPort();
+                log("Porta selecionada!");
+
+                // 3. Configurar Conexão
+                log("A preparar transporte...");
+                const transport = new Transport(device);
                 
-                log("Porta selecionada. A conectar...");
-                els.btn.disabled = true;
-                els.btn.textContent = "A LIGAR...";
+                // 4. Configurar Loader (Velocidade 460800 é ideal para S2)
+                const esploader = new ESPLoader(transport, 460800, null);
+
+                // 5. Conectar
+                btn.disabled = true;
+                btn.innerText = "A LIGAR...";
+                log("A conectar ao pedal (Mode: default)...");
                 
-                // Opção mode: 'default' é crucial para S2 na v0.5.4
+                // A versão 0.5.4 lida bem com 'default' no S2
                 await esploader.main_fn({ mode: 'default' });
                 await esploader.flash_id();
 
-                log("Chip identificado: " + esploader.chip.CHIP_NAME);
+                log("SUCESSO: Chip " + esploader.chip.CHIP_NAME + " detetado!");
 
-                // 4. Gravação
-                els.btn.textContent = "A GRAVAR... AGUARDE";
-                log("A gravar firmware...");
+                // 6. Gravar
+                log("A iniciar gravação em 0x10000...");
+                btn.innerText = "A GRAVAR...";
 
                 const fileArray = [{ data: firmwareData, address: 0x10000 }];
                 
@@ -201,51 +100,42 @@
                     'keep', 'keep', 'keep', false, true,
                     (fileIndex, written, total) => {
                         const percent = Math.round((written / total) * 100);
-                        els.btn.textContent = `A GRAVAR: ${percent}%`;
-                        els.statusText.textContent = `A transferir: ${percent}%`;
+                        btn.innerText = `A GRAVAR: ${percent}%`;
+                        // Log menos frequente para não travar
+                        if (percent % 10 === 0) log(`Progresso: ${percent}%`);
                     }
                 );
 
-                // 5. Finalização
-                log("✅ SUCESSO! A reiniciar o pedal...");
-                els.btn.textContent = "ATUALIZAÇÃO CONCLUÍDA";
-                els.btn.style.backgroundColor = "#16a34a";
-                els.statusText.textContent = "Pode desconectar o cabo agora.";
-                
-                try {
-                    await transport.setDTR(false);
-                    await transport.setRTS(true);
-                    await new Promise(r => setTimeout(r, 100));
-                    await transport.setRTS(false);
-                } catch(e) {}
-                
+                log("✅ GRAVAÇÃO CONCLUÍDA!");
+                btn.innerText = "SUCESSO!";
+                btn.style.backgroundColor = "#16a34a";
+                btn.disabled = false;
+
+                // Reset
+                await transport.setDTR(false);
+                await transport.setRTS(true);
+                await new Promise(r => setTimeout(r, 100));
+                await transport.setRTS(false);
                 await transport.disconnect();
 
             } catch (e) {
                 console.error(e);
+                log("❌ ERRO: " + e.message);
                 
-                // Tratamento de erros
-                if (e.message.includes("NetworkError") || e.message.includes("lost") || e.message.includes("disconnect")) {
-                    log("\n⚠️ O dispositivo reiniciou.");
-                    log("Isto é normal no ESP32-S2. Se a barra parou, tente de novo.");
-                    els.btn.textContent = "TENTAR NOVAMENTE";
-                    els.btn.style.backgroundColor = "#f59e0b"; 
-                    els.btn.disabled = false;
+                if (e.message.includes("NetworkError") || e.message.includes("lost")) {
+                    log("⚠️ O pedal reiniciou (Dispositivo Ejetado).");
+                    log("Isto é normal em alguns S2.");
+                    log("Clique em 'TENTAR NOVAMENTE' agora.");
+                    btn.innerText = "TENTAR NOVAMENTE";
+                    btn.style.backgroundColor = "#f59e0b";
+                    btn.disabled = false;
                 } else {
-                    log("\n❌ ERRO TÉCNICO: " + e.message);
-                    els.btn.textContent = "ERRO - TENTAR DE NOVO";
-                    els.btn.style.backgroundColor = "#dc2626";
-                    els.btn.disabled = false;
+                    btn.innerText = "ERRO - TENTE DE NOVO";
+                    btn.style.backgroundColor = "#dc2626";
+                    btn.disabled = false;
                 }
-                
-                if(transport) await transport.disconnect();
             }
         });
-
-        function log(msg) {
-            els.log.innerHTML += `> ${msg}\n`;
-            els.log.scrollTop = els.log.scrollHeight;
-        }
     </script>
 </body>
 </html>
