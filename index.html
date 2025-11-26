@@ -12,20 +12,19 @@
             padding: 40px;
         }
 
-        h1 { font-size: 26px; }
-
         #dropzone {
-            border: 2px dashed #666;
+            border: 2px dashed #777;
             padding: 40px;
             margin: 20px auto;
             width: 360px;
             border-radius: 10px;
             cursor: pointer;
-            transition: 0.3s;
+            transition: .2s;
         }
 
-        #dropzone:hover {
-            border-color: #fff;
+        #dropzone.dragover {
+            border-color: #0f0;
+            background: #222;
         }
 
         #log {
@@ -61,7 +60,9 @@
 
 <h1>Atualizador ESP32-S2 (via WebUSB)</h1>
 
-<div id="dropzone">Arraste o arquivo <b>app.bin</b> aqui<br><br>ou clique para selecionar</div>
+<div id="dropzone">
+    Arraste o arquivo <b>app.bin</b> aqui<br><br>ou clique para selecionar
+</div>
 
 <input type="file" id="fileInput" accept=".bin" style="display:none">
 
@@ -83,35 +84,44 @@ let firmwareFile = null;
 let esploader = null;
 let transport = null;
 
-// ----- LOG -----
+// ====================== LOG ======================
 function log(msg) {
     logBox.innerHTML += msg + "<br>";
     logBox.scrollTop = logBox.scrollHeight;
 }
 
-// ----- DROPZONE -----
-dropzone.addEventListener("click", () => fileInput.click());
+// ====================== CLICK PARA ABRIR FILE PICKER ======================
+dropzone.addEventListener("click", () => {
+    fileInput.click(); // <<--- AGORA FUNCIONA EM QUALQUER CHROME
+});
 
+// ====================== DROP ======================
 dropzone.addEventListener("dragover", e => {
     e.preventDefault();
-    dropzone.style.borderColor = "#0f0";
+    dropzone.classList.add("dragover");
 });
+
 dropzone.addEventListener("dragleave", () => {
-    dropzone.style.borderColor = "#666";
+    dropzone.classList.remove("dragover");
 });
+
 dropzone.addEventListener("drop", e => {
     e.preventDefault();
-    dropzone.style.borderColor = "#666";
+    dropzone.classList.remove("dragover");
 
-    const file = e.dataTransfer.files[0];
-    handleFile(file);
+    if (e.dataTransfer.files.length > 0) {
+        handleFile(e.dataTransfer.files[0]);
+    }
 });
 
-// ----- INPUT FILE -----
-fileInput.addEventListener("change", e => {
-    handleFile(e.target.files[0]);
+// ====================== FILE PICKER ======================
+fileInput.addEventListener("change", () => {
+    if (fileInput.files.length > 0) {
+        handleFile(fileInput.files[0]);
+    }
 });
 
+// ====================== TRATAMENTO DO ARQUIVO ======================
 function handleFile(file) {
     if (!file) return;
 
@@ -121,21 +131,21 @@ function handleFile(file) {
     }
 
     firmwareFile = file;
-    log("✔ Arquivo carregado: " + file.name);
     flashBtn.disabled = false;
+    log("✔ Arquivo carregado: " + file.name);
 }
 
-// ----- CONECTAR -----
+// ====================== CONEXÃO VIA WEBUSB ======================
 connectBtn.addEventListener("click", async () => {
     try {
-        log("🔌 Solicitando dispositivo via WebUSB...");
+        log("🔌 Solicitando dispositivo (WebUSB)...");
 
         const device = await navigator.usb.requestDevice({
-            filters: [{ vendorId: 0x303a }] // ESP32-S2 VID
+            filters: [{ vendorId: 0x303a }]
         });
 
         transport = new TransportWebUSB(device);
-        esploader = new ESPLoader(transport, 460800, msg => log(msg));
+        esploader = new ESPLoader(transport, 460800, log);
 
         log("Conectando ao bootloader...");
         await esploader.main_fn();
@@ -148,27 +158,27 @@ connectBtn.addEventListener("click", async () => {
     }
 });
 
-// ----- ENVIAR FIRMWARE -----
+// ====================== FLASH DO FIRMWARE ======================
 flashBtn.addEventListener("click", async () => {
     if (!firmwareFile) {
-        log("❌ Nenhum arquivo app.bin carregado");
+        log("❌ Nenhum arquivo app.bin selecionado");
         return;
     }
     if (!esploader) {
-        log("❌ Conecte primeiro ao dispositivo");
+        log("❌ Conecte ao dispositivo primeiro");
         return;
     }
 
     try {
         log("📤 Iniciando envio...");
 
-        const fileArray = await firmwareFile.arrayBuffer();
-        const data = new Uint8Array(fileArray);
+        const buffer = await firmwareFile.arrayBuffer();
+        const data = new Uint8Array(buffer);
 
         await esploader.write_flash(
             [
                 {
-                    address: 0x10000,     // somente app.bin
+                    address: 0x10000,
                     data: data
                 }
             ],
@@ -176,6 +186,7 @@ flashBtn.addEventListener("click", async () => {
         );
 
         log("🎉 Firmware enviado com sucesso!");
+
     } catch (err) {
         log("❌ Erro durante o envio: " + err);
     }
