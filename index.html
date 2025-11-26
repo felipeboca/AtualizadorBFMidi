@@ -5,26 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Atualizador BFMIDI</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f0f2f5; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
-        .box { background: white; padding: 2.5rem; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 600px; text-align: center; }
-        h1 { color: #111; margin-bottom: 0.5rem; }
-        .subtitle { color: #666; margin-bottom: 2rem; font-size: 0.95rem; }
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f8fafc; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
+        .box { background: white; padding: 2.5rem; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); width: 100%; max-width: 550px; text-align: center; }
+        h1 { color: #0f172a; margin-bottom: 0.5rem; letter-spacing: -0.5px; }
+        .subtitle { color: #64748b; margin-bottom: 2rem; font-size: 0.95rem; }
         
         .btn { background: #2563eb; color: white; border: none; padding: 16px; width: 100%; border-radius: 10px; font-weight: 600; cursor: pointer; font-size: 16px; margin-top: 15px; transition: all 0.2s; }
         .btn:disabled { background: #e2e8f0; color: #94a3b8; cursor: not-allowed; }
-        .btn:hover:not(:disabled) { background: #1d4ed8; }
+        .btn:hover:not(:disabled) { background: #1d4ed8; transform: translateY(-1px); }
         
-        .log { background: #1e1e1e; color: #e2e8f0; padding: 15px; border-radius: 10px; text-align: left; font-family: 'SF Mono', monospace; height: 300px; overflow-y: auto; margin-top: 20px; font-size: 11px; line-height: 1.5; white-space: pre-wrap; border: 1px solid #333; }
+        .log { background: #1e293b; color: #4ade80; padding: 15px; border-radius: 10px; text-align: left; font-family: 'SF Mono', monospace; height: 250px; overflow-y: auto; margin-top: 20px; font-size: 11px; line-height: 1.6; white-space: pre-wrap; border: 1px solid #334155; }
         
-        .file-box { border: 2px dashed #cbd5e1; padding: 30px; border-radius: 12px; margin: 20px 0; cursor: pointer; background: #f8fafc; transition: all 0.2s; }
-        .file-box:hover { background: #eff6ff; border-color: #2563eb; }
+        .file-box { border: 2px dashed #cbd5e1; padding: 30px; border-radius: 12px; margin: 20px 0; cursor: pointer; background: #f1f5f9; transition: all 0.2s; }
+        .file-box:hover { background: #e2e8f0; border-color: #2563eb; }
+        
+        .alert { background: #fff7ed; color: #c2410c; padding: 12px; border-radius: 8px; font-size: 0.9em; margin-bottom: 15px; display: none; text-align: left; border-left: 4px solid #f97316; }
     </style>
 </head>
 <body>
 
     <div class="box">
         <h1>Atualizador BFMIDI</h1>
-        <p class="subtitle">Versão v19.0 (Estabilidade & Velocidade 230400)</p>
+        <p class="subtitle">Versão Definitiva (v12.0 Combo)</p>
+
+        <div id="alert-box" class="alert"></div>
 
         <div class="file-box" onclick="document.getElementById('file').click()">
             <input type="file" id="file" accept=".bin" style="display: none">
@@ -38,24 +42,30 @@
         <div id="log" class="log">A aguardar início...</div>
     </div>
 
-    <!-- Usamos a versão 0.2.0 que sabemos que comunica -->
+    <!-- USO DO ESM.SH: Garante carregamento correto do módulo no Chrome -->
     <script type="module">
-        import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.2.0/bundle.js';
+        import { ESPLoader, Transport } from 'https://esm.sh/esptool-js@0.5.4';
 
         const btn = document.getElementById('btn');
         const logBox = document.getElementById('log');
+        const alertBox = document.getElementById('alert-box');
         let firmwareData = null;
 
-        // Terminal para ver o que a biblioteca está a fazer
+        // Terminal Simulado (Evita erros internos da biblioteca)
         const term = {
             clean: () => {},
-            writeLine: (d) => { log("LIB: " + d); },
-            write: (d) => { /* Ignora raw bytes */ }
+            writeLine: (d) => { /* console.log(d); */ },
+            write: (d) => { /* console.log(d); */ }
         };
 
         function log(msg) {
-            logBox.innerHTML += `${msg}\n`;
+            logBox.innerHTML += `> ${msg}\n`;
             logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        function showAlert(msg) {
+            alertBox.style.display = 'block';
+            alertBox.innerHTML = `⚠️ <b>Nota:</b> ${msg}`;
         }
 
         document.getElementById('file').addEventListener('change', (e) => {
@@ -64,69 +74,69 @@
             const reader = new FileReader();
             reader.onload = (ev) => {
                 firmwareData = ev.target.result;
-                document.getElementById('file-label').innerHTML = `✅ <b>${file.name}</b> pronto!`;
+                document.getElementById('file-label').innerHTML = `✅ <b>${file.name}</b> carregado!`;
                 document.getElementById('file-label').style.color = '#2563eb';
                 btn.disabled = false;
                 btn.innerText = "LIGAR E ATUALIZAR";
-                log(`> Ficheiro carregado. Clique no botão azul.`);
+                log(`Ficheiro pronto (${file.size} bytes). Ligue o pedal via USB.`);
             };
             reader.readAsArrayBuffer(file);
         });
 
         btn.addEventListener('click', async () => {
-            if(btn.innerText.includes("A LIGAR") || btn.innerText.includes("A GRAVAR")) return;
+            // Prevenção de duplo clique
+            if(btn.innerText.includes("...")) return;
 
             try {
-                if (!navigator.serial) throw new Error("Navegador incompatível. Use Chrome/Edge.");
+                if (!navigator.serial) throw new Error("Navegador incompatível. Use Chrome ou Edge.");
 
-                log("> A solicitar porta USB...");
+                log("A solicitar porta USB...");
                 const device = await navigator.serial.requestPort();
-                log("> Porta selecionada.");
+                log("Porta selecionada. A iniciar transporte...");
 
+                // --- PATCH MANUAL DE DISPOSITIVO ---
+                // 1. Criamos o transporte
                 const transport = new Transport(device);
                 
-                // MUDANÇA: 230400 baud rate. 
-                // É rápido o suficiente para não dar timeout no stub, mas seguro.
-                const esploader = new ESPLoader(transport, 230400, term);
+                // 2. FORÇAMOS o dispositivo para dentro da classe (Correção do erro 'undefined')
+                if (!transport.device) {
+                    console.log("A aplicar correção manual de dispositivo...");
+                    transport.device = device;
+                }
+
+                // 3. Criamos o loader com velocidade segura para S2 (460800)
+                const esploader = new ESPLoader(transport, 460800, term);
 
                 btn.disabled = true;
                 btn.innerText = "A LIGAR...";
-                log("> A conectar...");
+                log("A conectar ao pedal (Modo S2)...");
 
-                // Conexão normal sem truques manuais
-                await esploader.main_fn();
-                
-                // Pequena pausa para estabilizar antes de ler o chip
-                await new Promise(r => setTimeout(r, 200));
+                // Conexão com modo default (permite reset automático)
+                await esploader.main_fn({ mode: 'default' });
                 await esploader.flash_id();
 
-                log("> ✅ Chip detetado: " + esploader.chip.CHIP_NAME);
-                log("> A preparar gravação...");
+                log("✅ Chip detetado: " + esploader.chip.CHIP_NAME);
+                log("A preparar gravação...");
 
                 const fileArray = [{ data: firmwareData, address: 0x10000 }];
                 btn.innerText = "A GRAVAR... NÃO DESLIGUE";
                 
-                // Gravação Otimizada
                 await esploader.write_flash(
                     fileArray,
-                    'keep', // Flash Size
-                    'keep', // Flash Mode
-                    'keep', // Flash Freq
-                    false,  // Erase All (False é mais seguro)
-                    true,   // Compress (True evita timeout)
+                    'keep', 'keep', 'keep', false, true,
                     (fileIndex, written, total) => {
                         const percent = Math.round((written / total) * 100);
                         btn.innerText = `GRAVANDO: ${percent}%`;
-                        if (percent % 5 === 0) log(`> Progresso: ${percent}%`);
+                        if (percent % 10 === 0) log(`Progresso: ${percent}%`);
                     }
                 );
 
-                log("> ✅ GRAVAÇÃO CONCLUÍDA!");
+                log("✅ GRAVAÇÃO CONCLUÍDA!");
                 btn.innerText = "SUCESSO! REINICIE O PEDAL";
                 btn.style.backgroundColor = "#16a34a";
                 btn.disabled = false;
 
-                // Reset final
+                // Reset Final
                 try {
                     await transport.setDTR(false);
                     await transport.setRTS(true);
@@ -139,24 +149,22 @@
             } catch (e) {
                 console.error(e);
                 const msg = e.message || e.toString();
-                
-                log(`> ❌ ERRO: ${msg}`);
-                
-                if (msg.includes("Timeout")) {
-                    log("> ERRO DE TIMEOUT.");
-                    log("> DICA: Desconecte o pedal, aguarde 5s e tente novamente.");
+
+                // Tratamento de reinício normal do S2
+                if (msg.includes("NetworkError") || msg.includes("lost") || msg.includes("disconnect")) {
+                    log("\n⚠️ O PEDAL REINICIOU (EJETADO).");
+                    log("Isto é normal no S2. O processo pode ter terminado.");
+                    log("Verifique o pedal. Se não atualizou, tente de novo.");
+                    
+                    showAlert("O dispositivo reiniciou. Se a barra chegou ao fim, está tudo bem. Se não, tente novamente.");
                     btn.innerText = "TENTAR NOVAMENTE";
-                    btn.disabled = false;
-                    btn.style.backgroundColor = "#dc2626";
-                } else if (msg.includes("NetworkError") || msg.includes("lost")) {
-                    log("> O pedal reiniciou. Verifique se atualizou.");
-                    btn.innerText = "TENTAR NOVAMENTE";
-                    btn.disabled = false;
                     btn.style.backgroundColor = "#f59e0b";
-                } else {
-                    btn.innerText = "ERRO - TENTE DE NOVO";
                     btn.disabled = false;
+                } else {
+                    log("❌ ERRO: " + msg);
+                    btn.innerText = "ERRO - TENTE DE NOVO";
                     btn.style.backgroundColor = "#dc2626";
+                    btn.disabled = false;
                 }
             }
         });
