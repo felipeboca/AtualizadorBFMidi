@@ -6,9 +6,9 @@
     <title>Atualizador BFMIDI</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f0f2f5; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
-        .box { background: white; padding: 2rem; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 500px; text-align: center; }
+        .box { background: white; padding: 2.5rem; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 500px; text-align: center; }
         h1 { color: #111; margin-bottom: 0.5rem; }
-        .subtitle { color: #666; margin-bottom: 2rem; }
+        .subtitle { color: #666; margin-bottom: 2rem; font-size: 0.95rem; }
         
         .btn { background: #2563eb; color: white; border: none; padding: 16px; width: 100%; border-radius: 10px; font-weight: 600; cursor: pointer; font-size: 16px; margin-top: 15px; transition: all 0.2s; }
         .btn:disabled { background: #e2e8f0; color: #94a3b8; cursor: not-allowed; }
@@ -26,7 +26,7 @@
 
     <div class="box">
         <h1>Atualizador BFMIDI</h1>
-        <p class="subtitle">Ferramenta Oficial (v2.1 Módulo)</p>
+        <p class="subtitle">Versão Definitiva (ESM Build)</p>
 
         <div id="alert-box" class="alert"></div>
 
@@ -42,20 +42,20 @@
         <div id="log" class="log">A aguardar início...</div>
     </div>
 
-    <!-- SCRIPT TIPO MÓDULO: Essencial para a versão 0.5.4 funcionar -->
+    <!-- A GRANDE MUDANÇA: Usando jsDelivr com flag +esm para forçar compatibilidade -->
     <script type="module">
-        import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.5.4/bundle.js';
+        import { ESPLoader, Transport } from 'https://cdn.jsdelivr.net/npm/esptool-js@0.5.4/+esm';
 
         const btn = document.getElementById('btn');
         const logBox = document.getElementById('log');
         const alertBox = document.getElementById('alert-box');
         let firmwareData = null;
 
-        // Objeto terminal simulado para evitar erros internos da biblioteca
-        const dummyTerminal = {
+        // Terminal simulado para a biblioteca escrever logs sem erros
+        const term = {
             clean: () => {},
-            writeLine: (data) => { console.log(data); },
-            write: (data) => { console.log(data); }
+            writeLine: (data) => { /* console.log(data); */ },
+            write: (data) => { /* console.log(data); */ }
         };
 
         function log(msg) {
@@ -86,35 +86,32 @@
         btn.addEventListener('click', async () => {
             try {
                 if (!navigator.serial) {
-                    throw new Error("Navegador incompatível. Use Chrome ou Edge.");
+                    throw new Error("Navegador sem suporte Serial. Use Chrome ou Edge.");
                 }
 
-                // 1. Solicitar Porta
+                // 1. Porta USB
                 log("A solicitar porta USB...");
                 const device = await navigator.serial.requestPort();
-                log("Porta selecionada! A iniciar...");
+                log("Porta selecionada. A iniciar...");
 
-                // 2. Inicializar Transporte e Loader
+                // 2. Transporte e Loader (v0.5.4 ESM)
                 const transport = new Transport(device);
-                // Velocidade 460800 (ideal para S2), passando dummyTerminal
-                const esploader = new ESPLoader(transport, 460800, dummyTerminal);
+                // Velocidade 460800 é padrão e segura para o S2 nativo
+                const esploader = new ESPLoader(transport, 460800, term);
 
                 btn.disabled = true;
                 btn.innerText = "A LIGAR...";
-                log("A ligar ao pedal...");
+                log("A conectar (Modo S2)...");
 
-                // 3. Conectar (Modo default para evitar problemas de reset)
-                try {
-                    await esploader.main_fn({ mode: 'default' });
-                    await esploader.flash_id();
-                } catch (err) {
-                    throw err;
-                }
+                // 3. Conexão
+                // Usamos 'default' para permitir que a lib gira o reset
+                await esploader.main_fn({ mode: 'default' });
+                await esploader.flash_id();
 
                 log("✅ Chip detetado: " + esploader.chip.CHIP_NAME);
                 log("A preparar gravação...");
 
-                // 4. Gravar
+                // 4. Gravação
                 const fileArray = [{ data: firmwareData, address: 0x10000 }];
                 btn.innerText = "A GRAVAR... NÃO DESLIGUE";
                 
@@ -123,11 +120,12 @@
                     'keep', 'keep', 'keep', false, true,
                     (fileIndex, written, total) => {
                         const percent = Math.round((written / total) * 100);
-                        btn.innerText = `GRAVANDO: ${percent}%`;
+                        btn.innerText = `A GRAVAR: ${percent}%`;
                         if (percent % 10 === 0) log(`Progresso: ${percent}%`);
                     }
                 );
 
+                // 5. Sucesso
                 log("✅ GRAVAÇÃO CONCLUÍDA!");
                 btn.innerText = "SUCESSO! REINICIE O PEDAL";
                 btn.style.backgroundColor = "#16a34a";
@@ -144,13 +142,12 @@
                 console.error(e);
                 const msg = e.message || e.toString();
 
-                // Tratamento específico para o ESP32-S2 (Ejeção de USB)
                 if (msg.includes("NetworkError") || msg.includes("lost") || msg.includes("disconnect")) {
-                    log("\n⚠️ O PEDAL REINICIOU (Normal).");
-                    log("O Mac detetou a reinicialização do USB.");
-                    log("👉 Clique em 'CONTINUAR' para finalizar.");
+                    log("\n⚠️ O PEDAL REINICIOU (Isto é normal).");
+                    log("O Mac ejetou o disco porque entrou em modo flash.");
+                    log("👉 CLIQUE EM 'CONTINUAR' PARA FINALIZAR.");
                     
-                    showAlert("O dispositivo reiniciou para entrar em modo flash. Clique em CONTINUAR e selecione a porta novamente.");
+                    showAlert("O dispositivo reiniciou corretamente. Clique em CONTINUAR e selecione a porta novamente.");
                     
                     btn.innerText = "CONTINUAR (TENTAR NOVAMENTE)";
                     btn.style.backgroundColor = "#f59e0b";
