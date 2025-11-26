@@ -26,7 +26,7 @@
 
     <div class="box">
         <h1>Atualizador BFMIDI</h1>
-        <p class="subtitle">Versão Definitiva (v9.0 ESM.SH)</p>
+        <p class="subtitle">Versão Definitiva (v10.0 Patch Manual)</p>
 
         <div id="alert-box" class="alert"></div>
 
@@ -42,20 +42,19 @@
         <div id="log" class="log">A aguardar início...</div>
     </div>
 
-    <!-- NOVO FORNECEDOR DE BIBLIOTECA: esm.sh (Mais fiável para Chrome) -->
+    <!-- Usamos a versão mais recente do bundle -->
     <script type="module">
-        import { ESPLoader, Transport } from 'https://esm.sh/esptool-js@0.5.4';
+        import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js/bundle.js';
 
         const btn = document.getElementById('btn');
         const logBox = document.getElementById('log');
         const alertBox = document.getElementById('alert-box');
         let firmwareData = null;
 
-        // Terminal Simulado
         const term = {
             clean: () => {},
-            writeLine: (data) => { /* console.log(data); */ },
-            write: (data) => { /* console.log(data); */ }
+            writeLine: (d) => {},
+            write: (d) => {}
         };
 
         function log(msg) {
@@ -78,52 +77,46 @@
                 document.getElementById('file-label').style.color = '#2563eb';
                 btn.disabled = false;
                 btn.innerText = "LIGAR E ATUALIZAR";
-                log(`Ficheiro carregado (${file.size} bytes). Clique no botão azul.`);
+                log(`Ficheiro carregado. Clique no botão azul.`);
             };
             reader.readAsArrayBuffer(file);
         });
 
         btn.addEventListener('click', async () => {
-            // Evita clique duplo
             if(btn.innerText.includes("A LIGAR") || btn.innerText.includes("A GRAVAR")) return;
 
             try {
-                if (!navigator.serial) {
-                    throw new Error("Navegador sem suporte Serial. Use Chrome ou Edge.");
-                }
+                if (!navigator.serial) throw new Error("Navegador incompatível. Use Chrome/Edge.");
 
-                // 1. Pedir Porta
                 log("A solicitar porta USB...");
                 const device = await navigator.serial.requestPort();
-                
-                if (!device) throw new Error("Nenhum dispositivo selecionado.");
-                log("Porta selecionada. A preparar...");
+                log("Porta capturada! ID: " + (device.getInfo().usbVendorId || 'OK'));
 
-                // 2. Inicialização (Com patch de segurança)
+                // --- AQUI ESTÁ A CORREÇÃO NUCLEAR ---
                 const transport = new Transport(device);
                 
-                // FIX: Forçar a atribuição do dispositivo se a biblioteca falhar
+                // Força bruta: Garante que o dispositivo está atribuído corretamente
+                // O erro 'undefined reading getInfo' acontece porque transport.device está vazio
                 if (!transport.device) {
-                    console.log("Aplicando patch manual no Transport...");
+                    console.log("Aplicando Patch de Dispositivo...");
                     transport.device = device;
                 }
 
-                // Velocidade 115200 é mais lenta mas mais segura para evitar erros de buffer
-                const esploader = new ESPLoader(transport, 115200, term);
+                // Verificação extra antes de prosseguir
+                if (!transport.device) throw new Error("Falha crítica: O transporte perdeu o dispositivo.");
+
+                const esploader = new ESPLoader(transport, 460800, term);
 
                 btn.disabled = true;
                 btn.innerText = "A LIGAR...";
                 log("A conectar (Modo S2)...");
 
-                // 3. Conexão
-                // 'default' mode com a versão 0.5.4 lida com o reset do S2
                 await esploader.main_fn({ mode: 'default' });
                 await esploader.flash_id();
 
                 log("✅ Chip detetado: " + esploader.chip.CHIP_NAME);
                 log("A preparar gravação...");
 
-                // 4. Gravação
                 const fileArray = [{ data: firmwareData, address: 0x10000 }];
                 btn.innerText = "A GRAVAR... NÃO DESLIGUE";
                 
@@ -137,13 +130,11 @@
                     }
                 );
 
-                // 5. Sucesso
                 log("✅ GRAVAÇÃO CONCLUÍDA!");
                 btn.innerText = "SUCESSO! REINICIE O PEDAL";
                 btn.style.backgroundColor = "#16a34a";
                 btn.disabled = false;
 
-                // Reset final
                 try {
                     await transport.setDTR(false);
                     await transport.setRTS(true);
@@ -157,15 +148,13 @@
                 console.error(e);
                 const msg = e.message || e.toString();
 
-                // Tratamento de erros do S2
                 if (msg.includes("NetworkError") || msg.includes("lost") || msg.includes("disconnect")) {
-                    log("\n⚠️ O PEDAL REINICIOU (Normal).");
-                    log("O Mac ejetou o disco porque entrou em modo flash.");
-                    log("👉 CLIQUE EM 'CONTINUAR' PARA FINALIZAR.");
+                    log("\n⚠️ O PEDAL REINICIOU (EJETADO).");
+                    log("Isto é normal no S2. O processo pode ter concluído.");
+                    log("Verifique o pedal. Se não atualizou, tente de novo.");
                     
-                    showAlert("O dispositivo reiniciou. Clique em CONTINUAR e selecione a porta novamente.");
-                    
-                    btn.innerText = "CONTINUAR (TENTAR NOVAMENTE)";
+                    showAlert("O dispositivo reiniciou. Se a barra chegou ao fim, está tudo bem. Se não, tente de novo.");
+                    btn.innerText = "TENTAR NOVAMENTE";
                     btn.style.backgroundColor = "#f59e0b";
                     btn.disabled = false;
                 } else {
