@@ -70,7 +70,7 @@
         #log {
             margin-top: 25px;
             font-family: 'SF Mono', Consolas, monospace;
-            font-size: 11px;
+            font-size: 12px;
             text-align: left;
             background: #0f172a;
             color: #4ade80;
@@ -80,7 +80,7 @@
             overflow-y: auto;
             display: none;
             border: 1px solid #1e293b;
-            white-space: pre-wrap; /* Permite quebras de linha no erro */
+            white-space: pre-wrap;
         }
         
         .warning-box {
@@ -99,7 +99,7 @@
 
     <div class="container">
         <h1>Atualizador BFMIDI</h1>
-        <p class="subtitle">Ferramenta Oficial (Automática v0.3)</p>
+        <p class="subtitle">Ferramenta Oficial (Automática v1.0)</p>
 
         <div id="browser-warning" class="warning-box">
             ⚠️ <b>Navegador Incompatível</b><br>
@@ -122,9 +122,9 @@
         <div id="log"></div>
     </div>
 
-    <!-- TENTATIVA COM VERSÃO 0.3.0 (Meio termo entre compatibilidade e funcionalidade S2) -->
+    <!-- MUDANÇA: Voltamos à versão 0.5.4 (Moderna) mas sem a linha de log que causava o erro -->
     <script type="module">
-        import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.3.0/bundle.js';
+        import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.5.4/bundle.js';
 
         const els = {
             btn: document.getElementById('actionBtn'),
@@ -160,32 +160,25 @@
             if (!firmwareData) return;
             
             els.log.style.display = 'block';
-            log("Iniciando processo...");
+            log("A iniciar processo...");
 
             let device, transport, esploader;
 
             try {
-                // Diagnóstico 1: Verificar se a lib carregou
-                if (!ESPLoader || !Transport) throw new Error("A biblioteca esptool-js não foi carregada corretamente.");
-
                 // 1. Solicita porta
                 device = await navigator.serial.requestPort();
                 
-                // Diagnóstico 2: Verificar se o dispositivo existe
-                if (!device) throw new Error("Nenhum dispositivo selecionado.");
-                log("Porta USB selecionada. ID Interno: " + (device.getInfo ? JSON.stringify(device.getInfo()) : "Sem info"));
-
                 // 2. Inicializa
                 transport = new Transport(device);
-                // Velocidade 460800 é padrão para S2 native
-                esploader = new ESPLoader(transport, 460800, null);
+                // Velocidade 460800 é boa para S2, enableTracing false para performance
+                esploader = new ESPLoader(transport, 460800, null, false);
                 
-                log("A tentar ligar ao Bootloader...");
+                log("Porta selecionada. A conectar...");
                 els.btn.disabled = true;
                 els.btn.textContent = "A LIGAR...";
                 
-                // Tenta conectar
-                await esploader.main_fn();
+                // Tenta conectar. A opção mode: 'default' na v0.5.4 lida melhor com o reset do S2
+                await esploader.main_fn({ mode: 'default' });
                 await esploader.flash_id();
 
                 log("Chip identificado: " + esploader.chip.CHIP_NAME);
@@ -224,22 +217,15 @@
             } catch (e) {
                 console.error(e);
                 
-                // Tratamento de erros
-                if (e.message.includes("NetworkError") || e.message.includes("lost")) {
-                    log("\n⚠️ AVISO: Dispositivo desconectado/ejetado.");
-                    log("Isto acontece quando o chip reinicia para entrar no modo de gravação.");
-                    log("Tente clicar novamente em CONECTAR.");
+                // Tratamento de "Ejetado"
+                if (e.message.includes("NetworkError") || e.message.includes("lost") || e.message.includes("disconnect")) {
+                    log("\n⚠️ O dispositivo reiniciou (Normal).");
+                    log("Se a barra parou no meio, clique em TENTAR NOVAMENTE.");
                     els.btn.textContent = "TENTAR NOVAMENTE";
                     els.btn.style.backgroundColor = "#f59e0b"; 
                     els.btn.disabled = false;
                 } else {
-                    log("\n❌ ERRO TÉCNICO:");
-                    log(e.toString()); // Nome do erro
-                    if (e.stack) {
-                        log("\n--- RASTREIO (STACK TRACE) ---");
-                        log(e.stack); // Caminho exato do erro
-                        log("------------------------------");
-                    }
+                    log("\n❌ ERRO TÉCNICO: " + e.message);
                     els.btn.textContent = "ERRO - TENTAR DE NOVO";
                     els.btn.style.backgroundColor = "#dc2626";
                     els.btn.disabled = false;
