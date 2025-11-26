@@ -120,9 +120,9 @@
         <div id="log"></div>
     </div>
 
-    <!-- IMPORTANDO VERSÃO MAIS RECENTE DO ESPTOOL (CRUCIAL PARA S2) -->
+    <!-- USANDO VERSÃO 0.4.6 - A MAIS ESTÁVEL E COMPATÍVEL -->
     <script type="module">
-        import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.5.4/bundle.js';
+        import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.4.6/bundle.js';
 
         const els = {
             btn: document.getElementById('actionBtn'),
@@ -158,7 +158,7 @@
             if (!firmwareData) return;
             
             els.log.style.display = 'block';
-            log("Iniciando processo automático...");
+            log("Iniciando processo...");
 
             let device, transport, esploader;
 
@@ -167,17 +167,16 @@
                 device = await navigator.serial.requestPort();
                 transport = new Transport(device);
                 
-                // 2. Inicializa Loader com configurações modernas
-                // 'enableTracing: false' melhora performance
-                esploader = new ESPLoader(transport, 460800, null, false);
+                // 2. Inicializa Loader
+                // ALTERADO PARA 115200 (Velocidade segura confirmada)
+                esploader = new ESPLoader(transport, 115200, null);
                 
                 log("Conectando ao Pedal...");
                 els.btn.disabled = true;
                 els.btn.textContent = "CONECTANDO...";
                 
-                // Tenta conectar usando o modo padrão
-                // Se o dispositivo reiniciar (ejetar), o script tenta segurar a conexão
-                await esploader.main_fn({ mode: 'default' });
+                // Tenta conectar (Modo padrão da v0.4.6)
+                await esploader.main_fn('default');
                 await esploader.flash_id();
 
                 log("Chip identificado: " + esploader.chip.CHIP_NAME);
@@ -205,25 +204,28 @@
                 els.statusText.textContent = "Pode desconectar o cabo agora.";
                 
                 // Tenta dar um Soft Reset ao final
-                await transport.setDTR(false);
-                await transport.setRTS(true);
-                await new Promise(r => setTimeout(r, 100));
-                await transport.setRTS(false);
+                try {
+                    await transport.setDTR(false);
+                    await transport.setRTS(true);
+                    await new Promise(r => setTimeout(r, 100));
+                    await transport.setRTS(false);
+                } catch(e) {}
                 
                 await transport.disconnect();
 
             } catch (e) {
                 console.error(e);
                 
-                // Tratamento especial para o "Ejetado"
-                if (e.message.includes("NetworkError") || e.message.includes("The device has been lost")) {
-                    log("⚠️ AVISO: O dispositivo reiniciou (Isso é normal).");
-                    log("Tente clicar em ATUALIZAR novamente agora.");
+                // Tratamento para o "Ejetado"
+                if (e.message.includes("NetworkError") || e.message.includes("The device has been lost") || e.message.includes("device lost")) {
+                    log("⚠️ AVISO: O dispositivo reiniciou.");
+                    log("Se a gravação não terminou, clique em TENTAR NOVAMENTE.");
+                    
                     els.btn.textContent = "TENTAR NOVAMENTE";
+                    els.btn.style.backgroundColor = "#f59e0b"; // Amarelo
                     els.btn.disabled = false;
                     
-                    // Dica: Às vezes na segunda tentativa ele já está no modo certo
-                    alert("O pedal entrou em modo de atualização (e por isso desconectou).\n\nPor favor, clique em TENTAR NOVAMENTE e selecione a porta USB mais uma vez.");
+                    alert("O pedal reiniciou durante o processo.\nIsso é normal se ele entrou no modo de atualização.\n\nClique em 'TENTAR NOVAMENTE' e selecione a porta USB mais uma vez para finalizar.");
                 } else {
                     log("❌ ERRO: " + e.message);
                     els.btn.textContent = "ERRO - TENTAR DE NOVO";
