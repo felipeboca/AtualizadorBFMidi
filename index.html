@@ -19,7 +19,7 @@
 
     <div class="box">
         <h1>Atualizador BFMIDI</h1>
-        <p style="color: #666">Versão Final (Módulo v1.3)</p>
+        <p style="color: #666">Versão Final (Módulo v1.5)</p>
 
         <div class="file-box" onclick="document.getElementById('file').click()">
             <input type="file" id="file" accept=".bin" style="display: none">
@@ -30,9 +30,8 @@
         <div id="log" class="log">A aguardar início...</div>
     </div>
 
-    <!-- MUDANÇA TOTAL: Usando apenas Módulo, sem scripts globais -->
+    <!-- SCRIPT TIPO MÓDULO (Resolve o erro 'Unexpected keyword export') -->
     <script type="module">
-        // Importando diretamente da fonte oficial
         import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.5.4/bundle.js';
 
         const btn = document.getElementById('btn');
@@ -52,7 +51,7 @@
                 firmwareData = ev.target.result;
                 document.getElementById('file-label').innerHTML = `✅ <b>${file.name}</b> pronto!`;
                 btn.disabled = false;
-                btn.innerText = "CONECTAR E ATUALIZAR";
+                btn.innerText = "LIGAR E ATUALIZAR";
                 btn.style.backgroundColor = "#2563eb";
                 log("Ficheiro carregado. Clique no botão azul.");
             };
@@ -61,29 +60,35 @@
 
         btn.addEventListener('click', async () => {
             try {
-                // 1. Verificar suporte
+                // 1. Verificar suporte Web Serial
                 if (!navigator.serial) {
-                    throw new Error("O seu navegador não suporta Web Serial. Use o Chrome.");
+                    throw new Error("O seu navegador não suporta Web Serial. Use o Chrome ou Edge.");
                 }
 
-                // 2. Pedir Porta
+                // 2. Pedir Porta USB
                 log("A solicitar porta USB...");
                 const device = await navigator.serial.requestPort();
+                
+                if (!device) {
+                    throw new Error("Nenhum dispositivo selecionado.");
+                }
                 log("Porta selecionada!");
 
                 // 3. Configurar Conexão
+                // A inicialização é feita aqui para garantir que 'device' existe
                 log("A preparar transporte...");
                 const transport = new Transport(device);
                 
-                // 4. Configurar Loader (Velocidade 460800 é ideal para S2)
+                // 4. Configurar Loader (Velocidade 460800 é ideal para S2 nativo)
+                log("A configurar Loader...");
                 const esploader = new ESPLoader(transport, 460800, null);
 
                 // 5. Conectar
                 btn.disabled = true;
                 btn.innerText = "A LIGAR...";
-                log("A conectar ao pedal (Mode: default)...");
+                log("A ligar ao pedal...");
                 
-                // A versão 0.5.4 lida bem com 'default' no S2
+                // mode: 'default' é necessário para a versão 0.5.4 no ESP32-S2
                 await esploader.main_fn({ mode: 'default' });
                 await esploader.flash_id();
 
@@ -101,8 +106,8 @@
                     (fileIndex, written, total) => {
                         const percent = Math.round((written / total) * 100);
                         btn.innerText = `A GRAVAR: ${percent}%`;
-                        // Log menos frequente para não travar
-                        if (percent % 10 === 0) log(`Progresso: ${percent}%`);
+                        // Log a cada 10% para não sobrecarregar
+                        if (percent % 10 === 0 && percent > 0) log(`Progresso: ${percent}%`);
                     }
                 );
 
@@ -122,7 +127,7 @@
                 console.error(e);
                 log("❌ ERRO: " + e.message);
                 
-                if (e.message.includes("NetworkError") || e.message.includes("lost")) {
+                if (e.message.includes("NetworkError") || e.message.includes("lost") || e.message.includes("disconnect")) {
                     log("⚠️ O pedal reiniciou (Dispositivo Ejetado).");
                     log("Isto é normal em alguns S2.");
                     log("Clique em 'TENTAR NOVAMENTE' agora.");
