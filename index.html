@@ -70,16 +70,17 @@
         #log {
             margin-top: 25px;
             font-family: 'SF Mono', Consolas, monospace;
-            font-size: 12px;
+            font-size: 11px;
             text-align: left;
             background: #0f172a;
             color: #4ade80;
             padding: 15px;
             border-radius: 8px;
-            height: 160px;
+            height: 200px;
             overflow-y: auto;
             display: none;
             border: 1px solid #1e293b;
+            white-space: pre-wrap; /* Permite quebras de linha no erro */
         }
         
         .warning-box {
@@ -98,7 +99,7 @@
 
     <div class="container">
         <h1>Atualizador BFMIDI</h1>
-        <p class="subtitle">Ferramenta Oficial (Automática)</p>
+        <p class="subtitle">Ferramenta Oficial (Automática v0.3)</p>
 
         <div id="browser-warning" class="warning-box">
             ⚠️ <b>Navegador Incompatível</b><br>
@@ -121,12 +122,10 @@
         <div id="log"></div>
     </div>
 
-    <!-- SCRIPT CORRIGIDO: Tipo Module para suportar a importação correta -->
+    <!-- TENTATIVA COM VERSÃO 0.3.0 (Meio termo entre compatibilidade e funcionalidade S2) -->
     <script type="module">
-        // Importação direta da biblioteca como módulo
-        import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.4.6/bundle.js';
+        import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.3.0/bundle.js';
 
-        // Elementos da UI
         const els = {
             btn: document.getElementById('actionBtn'),
             fileInput: document.getElementById('firmwareFile'),
@@ -139,10 +138,8 @@
 
         let firmwareData = null;
 
-        // Verifica compatibilidade
         if (!navigator.serial) els.warning.style.display = 'block';
 
-        // Carregamento do Arquivo
         els.fileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
@@ -159,7 +156,6 @@
             reader.readAsArrayBuffer(file);
         });
 
-        // Ação do Botão
         els.btn.addEventListener('click', async () => {
             if (!firmwareData) return;
             
@@ -169,27 +165,34 @@
             let device, transport, esploader;
 
             try {
-                // 1. Solicita porta USB
+                // Diagnóstico 1: Verificar se a lib carregou
+                if (!ESPLoader || !Transport) throw new Error("A biblioteca esptool-js não foi carregada corretamente.");
+
+                // 1. Solicita porta
                 device = await navigator.serial.requestPort();
                 
-                // 2. Cria instância usando as classes importadas
+                // Diagnóstico 2: Verificar se o dispositivo existe
+                if (!device) throw new Error("Nenhum dispositivo selecionado.");
+                log("Porta USB selecionada. ID Interno: " + (device.getInfo ? JSON.stringify(device.getInfo()) : "Sem info"));
+
+                // 2. Inicializa
                 transport = new Transport(device);
-                esploader = new ESPLoader(transport, 115200, null);
+                // Velocidade 460800 é padrão para S2 native
+                esploader = new ESPLoader(transport, 460800, null);
                 
-                log("Conectando ao Pedal...");
+                log("A tentar ligar ao Bootloader...");
                 els.btn.disabled = true;
-                els.btn.textContent = "CONECTANDO...";
+                els.btn.textContent = "A LIGAR...";
                 
                 // Tenta conectar
-                // 'default' costuma ser o mais seguro para a versão 0.4.6
-                await esploader.main_fn('default');
+                await esploader.main_fn();
                 await esploader.flash_id();
 
                 log("Chip identificado: " + esploader.chip.CHIP_NAME);
 
                 // 3. Gravação
-                els.btn.textContent = "GRAVANDO... AGUARDE";
-                log("Gravando firmware...");
+                els.btn.textContent = "A GRAVAR... AGUARDE";
+                log("A gravar firmware...");
 
                 const fileArray = [{ data: firmwareData, address: 0x10000 }];
                 
@@ -198,8 +201,8 @@
                     'keep', 'keep', 'keep', false, true,
                     (fileIndex, written, total) => {
                         const percent = Math.round((written / total) * 100);
-                        els.btn.textContent = `GRAVANDO: ${percent}%`;
-                        els.statusText.textContent = `Transferindo: ${percent}%`;
+                        els.btn.textContent = `A GRAVAR: ${percent}%`;
+                        els.statusText.textContent = `A transferir: ${percent}%`;
                     }
                 );
 
@@ -209,7 +212,6 @@
                 els.btn.style.backgroundColor = "#16a34a";
                 els.statusText.textContent = "Pode desconectar o cabo agora.";
                 
-                // Tenta Reset Suave
                 try {
                     await transport.setDTR(false);
                     await transport.setRTS(true);
@@ -222,16 +224,22 @@
             } catch (e) {
                 console.error(e);
                 
-                // Tratamento de erros comuns
-                if (e.message.includes("NetworkError") || e.message.includes("lost") || e.message.includes("disconnect")) {
-                    log("⚠️ AVISO: O dispositivo reiniciou.");
-                    log("Se a gravação não terminou, clique em TENTAR NOVAMENTE.");
+                // Tratamento de erros
+                if (e.message.includes("NetworkError") || e.message.includes("lost")) {
+                    log("\n⚠️ AVISO: Dispositivo desconectado/ejetado.");
+                    log("Isto acontece quando o chip reinicia para entrar no modo de gravação.");
+                    log("Tente clicar novamente em CONECTAR.");
                     els.btn.textContent = "TENTAR NOVAMENTE";
-                    els.btn.style.backgroundColor = "#f59e0b"; // Amarelo
+                    els.btn.style.backgroundColor = "#f59e0b"; 
                     els.btn.disabled = false;
-                    alert("Dispositivo desconectado ou reiniciado.\nSe a gravação não completou, tente novamente.");
                 } else {
-                    log("❌ ERRO: " + e.message);
+                    log("\n❌ ERRO TÉCNICO:");
+                    log(e.toString()); // Nome do erro
+                    if (e.stack) {
+                        log("\n--- RASTREIO (STACK TRACE) ---");
+                        log(e.stack); // Caminho exato do erro
+                        log("------------------------------");
+                    }
                     els.btn.textContent = "ERRO - TENTAR DE NOVO";
                     els.btn.style.backgroundColor = "#dc2626";
                     els.btn.disabled = false;
@@ -242,7 +250,7 @@
         });
 
         function log(msg) {
-            els.log.innerHTML += `> ${msg}<br>`;
+            els.log.innerHTML += `> ${msg}\n`;
             els.log.scrollTop = els.log.scrollHeight;
         }
     </script>
