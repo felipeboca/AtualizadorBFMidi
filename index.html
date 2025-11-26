@@ -24,7 +24,7 @@
 
     <div class="box">
         <h1>Atualizador BFMIDI</h1>
-        <p class="subtitle">Versão Correção de Porta (v17.0)</p>
+        <p class="subtitle">Versão v18.0 (Timing Perfeito & High Speed)</p>
 
         <div class="file-box" onclick="document.getElementById('file').click()">
             <input type="file" id="file" accept=".bin" style="display: none">
@@ -38,7 +38,7 @@
         <div id="log" class="log">A aguardar início...</div>
     </div>
 
-    <!-- Usamos a versão 0.2.0 que provou ser a mais estável com o seu hardware -->
+    <!-- Usamos a versão 0.2.0 que comunica bem com o seu chip -->
     <script type="module">
         import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.2.0/bundle.js';
 
@@ -46,10 +46,11 @@
         const logBox = document.getElementById('log');
         let firmwareData = null;
 
+        // Terminal para capturar logs internos cruciais
         const term = {
             clean: () => {},
             writeLine: (d) => { log("LIB: " + d); },
-            write: (d) => { }
+            write: (d) => { /* log("RAW: " + d); */ }
         };
 
         function log(msg) {
@@ -67,7 +68,7 @@
                 document.getElementById('file-label').style.color = '#2563eb';
                 btn.disabled = false;
                 btn.innerText = "LIGAR E ATUALIZAR";
-                log(`> Ficheiro pronto. Clique no botão azul.`);
+                log(`> Ficheiro carregado. Clique no botão azul.`);
             };
             reader.readAsArrayBuffer(file);
         });
@@ -82,24 +83,28 @@
                 const device = await navigator.serial.requestPort();
                 log("> Porta selecionada.");
 
-                // --- FASE 1: RESET MANUAL ---
-                log("> A aplicar Reset Forçado (S2)...");
+                // --- FASE 1: RESET MANUAL DE PRECISÃO ---
+                // Usamos 115200 apenas para o pulso de reset
+                log("> A preparar Reset (S2)...");
                 await device.open({ baudRate: 115200 });
                 
-                // Sequência DTR/RTS para entrar em Bootloader
+                log("> A enviar pulso de Bootloader...");
                 await device.setSignals({ dataTerminalReady: false, requestToSend: true });
-                await new Promise(resolve => setTimeout(resolve, 100));
+                await new Promise(r => setTimeout(r, 100));
                 await device.setSignals({ dataTerminalReady: true, requestToSend: false });
-                await new Promise(resolve => setTimeout(resolve, 200)); // Espera o bootloader acordar
                 
-                // CRÍTICO: Fechar a porta para a biblioteca a poder usar depois!
+                // PAUSA CRÍTICA: O S2 precisa de tempo para inicializar o Bootloader USB
+                log("> A aguardar estabilização (500ms)...");
+                await new Promise(r => setTimeout(r, 500)); 
+                
                 await device.close();
-                log("> Reset enviado. Porta libertada.");
                 
-                // --- FASE 2: LIGAÇÃO DA BIBLIOTECA ---
-                log("> A iniciar biblioteca...");
+                // --- FASE 2: LIGAÇÃO DE ALTA VELOCIDADE ---
+                log("> A iniciar biblioteca a 921600 baud...");
                 const transport = new Transport(device);
-                const esploader = new ESPLoader(transport, 115200, term);
+                
+                // Mudança: Usamos 921600. O S2 nativo prefere velocidades altas para evitar timeouts de buffer
+                const esploader = new ESPLoader(transport, 921600, term);
 
                 btn.disabled = true;
                 btn.innerText = "A LIGAR...";
@@ -146,7 +151,7 @@
                 log(`> ❌ ERRO: ${msg}`);
                 
                 if (msg.includes("NetworkError") || msg.includes("lost")) {
-                    log("> O pedal reiniciou. Se completou, está tudo bem.");
+                    log("> O pedal reiniciou. Verifique se atualizou.");
                     btn.innerText = "TENTAR NOVAMENTE";
                     btn.disabled = false;
                     btn.style.backgroundColor = "#f59e0b";
