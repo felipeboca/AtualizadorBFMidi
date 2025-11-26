@@ -24,7 +24,7 @@
 
     <div class="box">
         <h1>Atualizador BFMIDI</h1>
-        <p class="subtitle">Versão v18.0 (Timing Perfeito & High Speed)</p>
+        <p class="subtitle">Versão v19.0 (Estabilidade & Velocidade 230400)</p>
 
         <div class="file-box" onclick="document.getElementById('file').click()">
             <input type="file" id="file" accept=".bin" style="display: none">
@@ -38,7 +38,7 @@
         <div id="log" class="log">A aguardar início...</div>
     </div>
 
-    <!-- Usamos a versão 0.2.0 que comunica bem com o seu chip -->
+    <!-- Usamos a versão 0.2.0 que sabemos que comunica -->
     <script type="module">
         import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.2.0/bundle.js';
 
@@ -46,11 +46,11 @@
         const logBox = document.getElementById('log');
         let firmwareData = null;
 
-        // Terminal para capturar logs internos cruciais
+        // Terminal para ver o que a biblioteca está a fazer
         const term = {
             clean: () => {},
             writeLine: (d) => { log("LIB: " + d); },
-            write: (d) => { /* log("RAW: " + d); */ }
+            write: (d) => { /* Ignora raw bytes */ }
         };
 
         function log(msg) {
@@ -83,34 +83,21 @@
                 const device = await navigator.serial.requestPort();
                 log("> Porta selecionada.");
 
-                // --- FASE 1: RESET MANUAL DE PRECISÃO ---
-                // Usamos 115200 apenas para o pulso de reset
-                log("> A preparar Reset (S2)...");
-                await device.open({ baudRate: 115200 });
-                
-                log("> A enviar pulso de Bootloader...");
-                await device.setSignals({ dataTerminalReady: false, requestToSend: true });
-                await new Promise(r => setTimeout(r, 100));
-                await device.setSignals({ dataTerminalReady: true, requestToSend: false });
-                
-                // PAUSA CRÍTICA: O S2 precisa de tempo para inicializar o Bootloader USB
-                log("> A aguardar estabilização (500ms)...");
-                await new Promise(r => setTimeout(r, 500)); 
-                
-                await device.close();
-                
-                // --- FASE 2: LIGAÇÃO DE ALTA VELOCIDADE ---
-                log("> A iniciar biblioteca a 921600 baud...");
                 const transport = new Transport(device);
                 
-                // Mudança: Usamos 921600. O S2 nativo prefere velocidades altas para evitar timeouts de buffer
-                const esploader = new ESPLoader(transport, 921600, term);
+                // MUDANÇA: 230400 baud rate. 
+                // É rápido o suficiente para não dar timeout no stub, mas seguro.
+                const esploader = new ESPLoader(transport, 230400, term);
 
                 btn.disabled = true;
                 btn.innerText = "A LIGAR...";
+                log("> A conectar...");
 
-                // Conecta
+                // Conexão normal sem truques manuais
                 await esploader.main_fn();
+                
+                // Pequena pausa para estabilizar antes de ler o chip
+                await new Promise(r => setTimeout(r, 200));
                 await esploader.flash_id();
 
                 log("> ✅ Chip detetado: " + esploader.chip.CHIP_NAME);
@@ -119,9 +106,14 @@
                 const fileArray = [{ data: firmwareData, address: 0x10000 }];
                 btn.innerText = "A GRAVAR... NÃO DESLIGUE";
                 
+                // Gravação Otimizada
                 await esploader.write_flash(
                     fileArray,
-                    'keep', 'keep', 'keep', false, true,
+                    'keep', // Flash Size
+                    'keep', // Flash Mode
+                    'keep', // Flash Freq
+                    false,  // Erase All (False é mais seguro)
+                    true,   // Compress (True evita timeout)
                     (fileIndex, written, total) => {
                         const percent = Math.round((written / total) * 100);
                         btn.innerText = `GRAVANDO: ${percent}%`;
@@ -150,7 +142,13 @@
                 
                 log(`> ❌ ERRO: ${msg}`);
                 
-                if (msg.includes("NetworkError") || msg.includes("lost")) {
+                if (msg.includes("Timeout")) {
+                    log("> ERRO DE TIMEOUT.");
+                    log("> DICA: Desconecte o pedal, aguarde 5s e tente novamente.");
+                    btn.innerText = "TENTAR NOVAMENTE";
+                    btn.disabled = false;
+                    btn.style.backgroundColor = "#dc2626";
+                } else if (msg.includes("NetworkError") || msg.includes("lost")) {
                     log("> O pedal reiniciou. Verifique se atualizou.");
                     btn.innerText = "TENTAR NOVAMENTE";
                     btn.disabled = false;
