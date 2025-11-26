@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-PT">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -121,8 +121,9 @@
         <div id="log"></div>
     </div>
 
-    <!-- MUDANÇA CRÍTICA: Usando type="module" para evitar erro de sintaxe 'export' -->
+    <!-- SCRIPT CORRIGIDO: Tipo Module para suportar a importação correta -->
     <script type="module">
+        // Importação direta da biblioteca como módulo
         import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.4.6/bundle.js';
 
         // Elementos da UI
@@ -168,17 +169,11 @@
             let device, transport, esploader;
 
             try {
-                // Validação de segurança para garantir que a biblioteca carregou
-                if (!ESPLoader || !Transport) {
-                    throw new Error("Falha ao carregar a biblioteca esptool. Verifique a internet.");
-                }
-
                 // 1. Solicita porta USB
                 device = await navigator.serial.requestPort();
-                transport = new Transport(device);
                 
-                // 2. Inicializa Loader
-                // Velocidade 115200 (Segura e compatível)
+                // 2. Cria instância usando as classes importadas
+                transport = new Transport(device);
                 esploader = new ESPLoader(transport, 115200, null);
                 
                 log("Conectando ao Pedal...");
@@ -186,7 +181,7 @@
                 els.btn.textContent = "CONECTANDO...";
                 
                 // Tenta conectar
-                // Usa 'default'
+                // 'default' costuma ser o mais seguro para a versão 0.4.6
                 await esploader.main_fn('default');
                 await esploader.flash_id();
 
@@ -209,7 +204,7 @@
                 );
 
                 // 4. Finalização
-                log("✅ SUCESSO! Reiniciando pedal...");
+                log("✅ SUCESSO! A reiniciar o pedal...");
                 els.btn.textContent = "ATUALIZAÇÃO CONCLUÍDA";
                 els.btn.style.backgroundColor = "#16a34a";
                 els.statusText.textContent = "Pode desconectar o cabo agora.";
@@ -230,7 +225,7 @@
                 // Tratamento de erros comuns
                 if (e.message.includes("NetworkError") || e.message.includes("lost") || e.message.includes("disconnect")) {
                     log("⚠️ AVISO: O dispositivo reiniciou.");
-                    log("Se não terminou, clique em TENTAR NOVAMENTE.");
+                    log("Se a gravação não terminou, clique em TENTAR NOVAMENTE.");
                     els.btn.textContent = "TENTAR NOVAMENTE";
                     els.btn.style.backgroundColor = "#f59e0b"; // Amarelo
                     els.btn.disabled = false;
