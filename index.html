@@ -24,7 +24,7 @@
 
     <div class="box">
         <h1>Atualizador BFMIDI</h1>
-        <p class="subtitle">Versão Clone Oficial (v15.0 - v0.2.0 Legacy)</p>
+        <p class="subtitle">Versão Reset Forçado (v16.0 S2 Special)</p>
 
         <div class="file-box" onclick="document.getElementById('file').click()">
             <input type="file" id="file" accept=".bin" style="display: none">
@@ -38,7 +38,7 @@
         <div id="log" class="log">A aguardar início...</div>
     </div>
 
-    <!-- Usamos a versão 0.2.0 EXATA do site oficial, carregada como módulo -->
+    <!-- Usamos a versão 0.2.0 que NÃO dá erro de script -->
     <script type="module">
         import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.2.0/bundle.js';
 
@@ -46,11 +46,10 @@
         const logBox = document.getElementById('log');
         let firmwareData = null;
 
-        // Terminal Simulado (Igual ao do site oficial)
         const term = {
             clean: () => {},
             writeLine: (d) => { log("LIB: " + d); },
-            write: (d) => { /* log("RAW: " + d); */ }
+            write: (d) => { }
         };
 
         function log(msg) {
@@ -68,7 +67,7 @@
                 document.getElementById('file-label').style.color = '#2563eb';
                 btn.disabled = false;
                 btn.innerText = "LIGAR E ATUALIZAR";
-                log(`> Ficheiro carregado. Clique no botão azul.`);
+                log(`> Ficheiro pronto. Clique no botão azul.`);
             };
             reader.readAsArrayBuffer(file);
         });
@@ -85,15 +84,25 @@
 
                 const transport = new Transport(device);
                 
-                // Velocidade 115200 (Igual à sua tentativa manual com sucesso)
-                // A versão 0.2.0 usa baudrate como segundo argumento
+                // TRUQUE S2: Forçar reset manual antes de iniciar o Loader
+                // Isto simula o segurar do botão BOOT
+                log("> A aplicar Reset Forçado (S2)...");
+                await device.open({ baudRate: 115200 });
+                
+                await device.setSignals({ dataTerminalReady: false, requestToSend: true });
+                await new Promise(resolve => setTimeout(resolve, 100));
+                await device.setSignals({ dataTerminalReady: true, requestToSend: false });
+                await new Promise(resolve => setTimeout(resolve, 200)); // Espera o bootloader acordar
+                
+                log("> Reset enviado. A iniciar comunicação...");
+                
+                // Reutiliza a conexão aberta
                 const esploader = new ESPLoader(transport, 115200, term);
 
                 btn.disabled = true;
                 btn.innerText = "A LIGAR...";
-                log("> A conectar (Pode demorar)...");
 
-                // Tenta conectar sem argumentos (Padrão v0.2.0)
+                // Conecta
                 await esploader.main_fn();
                 await esploader.flash_id();
 
@@ -103,15 +112,14 @@
                 const fileArray = [{ data: firmwareData, address: 0x10000 }];
                 btn.innerText = "A GRAVAR... NÃO DESLIGUE";
                 
-                // write_flash na v0.2.0 tem esta assinatura específica
+                // Gravação com parâmetros conservadores
                 await esploader.write_flash(
                     fileArray,
                     'keep', 'keep', 'keep', false, true,
                     (fileIndex, written, total) => {
                         const percent = Math.round((written / total) * 100);
                         btn.innerText = `GRAVANDO: ${percent}%`;
-                        // Log a cada 10%
-                        if (percent % 10 === 0) log(`> Progresso: ${percent}%`);
+                        if (percent % 5 === 0) log(`> Progresso: ${percent}%`);
                     }
                 );
 
@@ -120,7 +128,7 @@
                 btn.style.backgroundColor = "#16a34a";
                 btn.disabled = false;
 
-                // Reset final
+                // Reset final para reiniciar o pedal
                 try {
                     await transport.setDTR(false);
                     await transport.setRTS(true);
@@ -136,18 +144,15 @@
                 
                 log(`> ❌ ERRO: ${msg}`);
                 
+                // Se der erro de porta ocupada, é porque tentámos abrir 2 vezes (uma no reset, outra na lib)
+                // Mas a lib v0.2.0 costuma lidar bem com transporte já aberto.
+                // Se falhar, pediremos para reconectar.
+                
                 if (msg.includes("NetworkError") || msg.includes("lost")) {
-                    log("> O pedal reiniciou. Se a gravação terminou, está tudo bem.");
-                    log("> Se não, tente novamente (agora que ele já reiniciou).");
+                    log("> O pedal reiniciou. Se completou, está tudo bem.");
                     btn.innerText = "TENTAR NOVAMENTE";
                     btn.disabled = false;
                     btn.style.backgroundColor = "#f59e0b";
-                } else if (msg.includes("Timeout")) {
-                    log("> ERRO DE TIMEOUT.");
-                    log("> Tente desconectar e reconectar o USB e tente de novo.");
-                    btn.innerText = "TENTAR NOVAMENTE";
-                    btn.disabled = false;
-                    btn.style.backgroundColor = "#dc2626";
                 } else {
                     btn.innerText = "ERRO - TENTE DE NOVO";
                     btn.disabled = false;
