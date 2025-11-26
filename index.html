@@ -26,7 +26,7 @@
 
     <div class="box">
         <h1>Atualizador BFMIDI</h1>
-        <p class="subtitle">Versão Definitiva (ESM Build)</p>
+        <p class="subtitle">Versão Definitiva (v4.0 Universal)</p>
 
         <div id="alert-box" class="alert"></div>
 
@@ -42,16 +42,16 @@
         <div id="log" class="log">A aguardar início...</div>
     </div>
 
-    <!-- A GRANDE MUDANÇA: Usando jsDelivr com flag +esm para forçar compatibilidade -->
+    <!-- IMPORTAÇÃO ROBUSTA: Importa tudo (*) para evitar erros de estrutura -->
     <script type="module">
-        import { ESPLoader, Transport } from 'https://cdn.jsdelivr.net/npm/esptool-js@0.5.4/+esm';
+        import * as esptoolLib from 'https://cdn.jsdelivr.net/npm/esptool-js@0.5.4/+esm';
 
         const btn = document.getElementById('btn');
         const logBox = document.getElementById('log');
         const alertBox = document.getElementById('alert-box');
         let firmwareData = null;
 
-        // Terminal simulado para a biblioteca escrever logs sem erros
+        // Terminal simulado
         const term = {
             clean: () => {},
             writeLine: (data) => { /* console.log(data); */ },
@@ -66,6 +66,16 @@
         function showAlert(msg) {
             alertBox.style.display = 'block';
             alertBox.innerHTML = `⚠️ <b>Nota:</b> ${msg}`;
+        }
+
+        // --- RESOLUÇÃO DE CLASSES ---
+        // O segredo: Procura as classes onde quer que elas estejam (raiz ou default)
+        const ESPLoader = esptoolLib.ESPLoader || (esptoolLib.default ? esptoolLib.default.ESPLoader : null);
+        const Transport = esptoolLib.Transport || (esptoolLib.default ? esptoolLib.default.Transport : null);
+
+        if (!ESPLoader || !Transport) {
+            log("❌ ERRO FATAL: Falha ao carregar biblioteca esptool-js.");
+            log("Estrutura recebida: " + Object.keys(esptoolLib).join(", "));
         }
 
         document.getElementById('file').addEventListener('change', (e) => {
@@ -94,17 +104,15 @@
                 const device = await navigator.serial.requestPort();
                 log("Porta selecionada. A iniciar...");
 
-                // 2. Transporte e Loader (v0.5.4 ESM)
+                // 2. Inicializar Classes (Agora com garantia que existem)
                 const transport = new Transport(device);
-                // Velocidade 460800 é padrão e segura para o S2 nativo
-                const esploader = new ESPLoader(transport, 460800, term);
+                const esploader = new ESPLoader(transport, 460800, term); // 460800 ideal para S2
 
                 btn.disabled = true;
                 btn.innerText = "A LIGAR...";
                 log("A conectar (Modo S2)...");
 
                 // 3. Conexão
-                // Usamos 'default' para permitir que a lib gira o reset
                 await esploader.main_fn({ mode: 'default' });
                 await esploader.flash_id();
 
