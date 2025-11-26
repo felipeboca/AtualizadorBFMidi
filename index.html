@@ -24,7 +24,7 @@
 
     <div class="box">
         <h1>Atualizador BFMIDI</h1>
-        <p class="subtitle">Versão Reset Forçado (v16.0 S2 Special)</p>
+        <p class="subtitle">Versão Correção de Porta (v17.0)</p>
 
         <div class="file-box" onclick="document.getElementById('file').click()">
             <input type="file" id="file" accept=".bin" style="display: none">
@@ -38,7 +38,7 @@
         <div id="log" class="log">A aguardar início...</div>
     </div>
 
-    <!-- Usamos a versão 0.2.0 que NÃO dá erro de script -->
+    <!-- Usamos a versão 0.2.0 que provou ser a mais estável com o seu hardware -->
     <script type="module">
         import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.2.0/bundle.js';
 
@@ -82,21 +82,23 @@
                 const device = await navigator.serial.requestPort();
                 log("> Porta selecionada.");
 
-                const transport = new Transport(device);
-                
-                // TRUQUE S2: Forçar reset manual antes de iniciar o Loader
-                // Isto simula o segurar do botão BOOT
+                // --- FASE 1: RESET MANUAL ---
                 log("> A aplicar Reset Forçado (S2)...");
                 await device.open({ baudRate: 115200 });
                 
+                // Sequência DTR/RTS para entrar em Bootloader
                 await device.setSignals({ dataTerminalReady: false, requestToSend: true });
                 await new Promise(resolve => setTimeout(resolve, 100));
                 await device.setSignals({ dataTerminalReady: true, requestToSend: false });
                 await new Promise(resolve => setTimeout(resolve, 200)); // Espera o bootloader acordar
                 
-                log("> Reset enviado. A iniciar comunicação...");
+                // CRÍTICO: Fechar a porta para a biblioteca a poder usar depois!
+                await device.close();
+                log("> Reset enviado. Porta libertada.");
                 
-                // Reutiliza a conexão aberta
+                // --- FASE 2: LIGAÇÃO DA BIBLIOTECA ---
+                log("> A iniciar biblioteca...");
+                const transport = new Transport(device);
                 const esploader = new ESPLoader(transport, 115200, term);
 
                 btn.disabled = true;
@@ -112,7 +114,6 @@
                 const fileArray = [{ data: firmwareData, address: 0x10000 }];
                 btn.innerText = "A GRAVAR... NÃO DESLIGUE";
                 
-                // Gravação com parâmetros conservadores
                 await esploader.write_flash(
                     fileArray,
                     'keep', 'keep', 'keep', false, true,
@@ -128,7 +129,7 @@
                 btn.style.backgroundColor = "#16a34a";
                 btn.disabled = false;
 
-                // Reset final para reiniciar o pedal
+                // Reset final
                 try {
                     await transport.setDTR(false);
                     await transport.setRTS(true);
@@ -143,10 +144,6 @@
                 const msg = e.message || e.toString();
                 
                 log(`> ❌ ERRO: ${msg}`);
-                
-                // Se der erro de porta ocupada, é porque tentámos abrir 2 vezes (uma no reset, outra na lib)
-                // Mas a lib v0.2.0 costuma lidar bem com transporte já aberto.
-                // Se falhar, pediremos para reconectar.
                 
                 if (msg.includes("NetworkError") || msg.includes("lost")) {
                     log("> O pedal reiniciou. Se completou, está tudo bem.");
