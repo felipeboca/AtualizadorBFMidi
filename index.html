@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Atualizador BFMIDI2</title>
+
     <style>
         :root {
             --primary: #2563eb;
@@ -120,10 +121,11 @@
         <div id="log"></div>
     </div>
 
-    <!-- CORREÇÃO: Adicionado '?module' ao final do link para corrigir o erro 'undefined' -->
+    <!-- MUDANÇA CRÍTICA: Usando type="module" para evitar erro de sintaxe 'export' -->
     <script type="module">
-        import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.4.6/bundle.js?module';
+        import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.4.6/bundle.js';
 
+        // Elementos da UI
         const els = {
             btn: document.getElementById('actionBtn'),
             fileInput: document.getElementById('firmwareFile'),
@@ -136,8 +138,10 @@
 
         let firmwareData = null;
 
+        // Verifica compatibilidade
         if (!navigator.serial) els.warning.style.display = 'block';
 
+        // Carregamento do Arquivo
         els.fileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
@@ -154,6 +158,7 @@
             reader.readAsArrayBuffer(file);
         });
 
+        // Ação do Botão
         els.btn.addEventListener('click', async () => {
             if (!firmwareData) return;
             
@@ -163,19 +168,25 @@
             let device, transport, esploader;
 
             try {
-                // 1. Solicita porta
+                // Validação de segurança para garantir que a biblioteca carregou
+                if (!ESPLoader || !Transport) {
+                    throw new Error("Falha ao carregar a biblioteca esptool. Verifique a internet.");
+                }
+
+                // 1. Solicita porta USB
                 device = await navigator.serial.requestPort();
                 transport = new Transport(device);
                 
                 // 2. Inicializa Loader
-                // Velocidade 115200 (Mais compatível)
+                // Velocidade 115200 (Segura e compatível)
                 esploader = new ESPLoader(transport, 115200, null);
                 
                 log("Conectando ao Pedal...");
                 els.btn.disabled = true;
                 els.btn.textContent = "CONECTANDO...";
                 
-                // Tenta conectar (Modo padrão da v0.4.6)
+                // Tenta conectar
+                // Usa 'default'
                 await esploader.main_fn('default');
                 await esploader.flash_id();
 
@@ -203,7 +214,7 @@
                 els.btn.style.backgroundColor = "#16a34a";
                 els.statusText.textContent = "Pode desconectar o cabo agora.";
                 
-                // Tenta dar um Soft Reset ao final
+                // Tenta Reset Suave
                 try {
                     await transport.setDTR(false);
                     await transport.setRTS(true);
@@ -216,16 +227,14 @@
             } catch (e) {
                 console.error(e);
                 
-                // Tratamento para o "Ejetado"
-                if (e.message.includes("NetworkError") || e.message.includes("The device has been lost") || e.message.includes("device lost")) {
+                // Tratamento de erros comuns
+                if (e.message.includes("NetworkError") || e.message.includes("lost") || e.message.includes("disconnect")) {
                     log("⚠️ AVISO: O dispositivo reiniciou.");
-                    log("Se a gravação não terminou, clique em TENTAR NOVAMENTE.");
-                    
+                    log("Se não terminou, clique em TENTAR NOVAMENTE.");
                     els.btn.textContent = "TENTAR NOVAMENTE";
                     els.btn.style.backgroundColor = "#f59e0b"; // Amarelo
                     els.btn.disabled = false;
-                    
-                    alert("O pedal reiniciou durante o processo.\nIsso é normal se ele entrou no modo de atualização.\n\nClique em 'TENTAR NOVAMENTE' e selecione a porta USB mais uma vez para finalizar.");
+                    alert("Dispositivo desconectado ou reiniciado.\nSe a gravação não completou, tente novamente.");
                 } else {
                     log("❌ ERRO: " + e.message);
                     els.btn.textContent = "ERRO - TENTAR DE NOVO";
