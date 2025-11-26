@@ -1,176 +1,186 @@
 <!DOCTYPE html>
-<html lang="pt-PT">
+<html lang="pt">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Atualizador BFMIDI</title>
+    <title>ESP32-S2 Atualizador</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f0f2f5; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
-        .box { background: white; padding: 2.5rem; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 500px; text-align: center; }
-        h1 { color: #111; margin-bottom: 0.5rem; }
-        .subtitle { color: #666; margin-bottom: 2rem; font-size: 0.95rem; }
-        
-        .btn { background: #2563eb; color: white; border: none; padding: 16px; width: 100%; border-radius: 10px; font-weight: 600; cursor: pointer; font-size: 16px; margin-top: 15px; transition: all 0.2s; }
-        .btn:disabled { background: #e2e8f0; color: #94a3b8; cursor: not-allowed; }
-        .btn:hover:not(:disabled) { background: #1d4ed8; }
-        
-        .log { background: #0f172a; color: #4ade80; padding: 15px; border-radius: 10px; text-align: left; font-family: 'SF Mono', monospace; height: 220px; overflow-y: auto; margin-top: 20px; font-size: 11px; line-height: 1.5; white-space: pre-wrap; border: 1px solid #1e293b; }
-        
-        .file-box { border: 2px dashed #cbd5e1; padding: 30px; border-radius: 12px; margin: 20px 0; cursor: pointer; background: #f8fafc; transition: all 0.2s; }
-        .file-box:hover { background: #eff6ff; border-color: #2563eb; }
-        
-        .alert { background: #fff7ed; color: #9a3412; padding: 12px; border-radius: 8px; font-size: 0.9em; margin-bottom: 15px; display: none; text-align: left; border-left: 4px solid #f97316; }
+        body {
+            font-family: Arial, sans-serif;
+            background: #111;
+            color: #eee;
+            text-align: center;
+            padding: 40px;
+        }
+
+        h1 { font-size: 26px; }
+
+        #dropzone {
+            border: 2px dashed #666;
+            padding: 40px;
+            margin: 20px auto;
+            width: 360px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        #dropzone:hover {
+            border-color: #fff;
+        }
+
+        #log {
+            margin-top: 30px;
+            background: #000;
+            color: #0f0;
+            padding: 10px;
+            height: 220px;
+            overflow-y: auto;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 13px;
+        }
+
+        button {
+            padding: 12px 25px;
+            margin: 10px;
+            border: none;
+            background: #0275ff;
+            color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body>
 
-    <div class="box">
-        <h1>Atualizador BFMIDI</h1>
-        <p class="subtitle">Versão Definitiva (v6.0 ESM Run)</p>
+<h1>Atualizador ESP32-S2 (via WebUSB)</h1>
 
-        <div id="alert-box" class="alert"></div>
+<div id="dropzone">Arraste o arquivo <b>app.bin</b> aqui<br><br>ou clique para selecionar</div>
 
-        <div class="file-box" onclick="document.getElementById('file').click()">
-            <input type="file" id="file" accept=".bin" style="display: none">
-            <div id="file-label">
-                <div style="font-size: 24px; margin-bottom: 10px">📂</div>
-                Clique para selecionar o ficheiro <b>app.bin</b>
-            </div>
-        </div>
+<input type="file" id="fileInput" accept=".bin" style="display:none">
 
-        <button id="btn" class="btn" disabled>Carregue o ficheiro primeiro</button>
-        <div id="log" class="log">A aguardar início...</div>
-    </div>
+<button id="connectBtn">Conectar ao Dispositivo</button>
+<button id="flashBtn" disabled>Enviar Firmware</button>
 
-    <!-- MÓDULO ESM: A forma correta de carregar a biblioteca moderna -->
-    <!-- Usamos esm.run para garantir compatibilidade máxima -->
-    <script type="module">
-        import { ESPLoader, Transport } from 'https://esm.run/esptool-js@0.5.4';
+<div id="log"></div>
 
-        const btn = document.getElementById('btn');
-        const logBox = document.getElementById('log');
-        const alertBox = document.getElementById('alert-box');
-        let firmwareData = null;
+<script type="module">
+import { ESPLoader, TransportWebUSB } from "https://cdn.jsdelivr.net/npm/esptool-js@0.5.4/bundle.min.js";
 
-        // Terminal simulado completo para evitar erros internos
-        const term = {
-            clean: () => {},
-            writeLine: (data) => { /* console.log(data); */ },
-            write: (data) => { /* console.log(data); */ }
-        };
+const dropzone = document.getElementById("dropzone");
+const fileInput = document.getElementById("fileInput");
+const connectBtn = document.getElementById("connectBtn");
+const flashBtn = document.getElementById("flashBtn");
+const logBox = document.getElementById("log");
 
-        function log(msg) {
-            logBox.innerHTML += `> ${msg}\n`;
-            logBox.scrollTop = logBox.scrollHeight;
-        }
+let firmwareFile = null;
+let esploader = null;
+let transport = null;
 
-        function showAlert(msg) {
-            alertBox.style.display = 'block';
-            alertBox.innerHTML = `⚠️ <b>Nota:</b> ${msg}`;
-        }
+// ----- LOG -----
+function log(msg) {
+    logBox.innerHTML += msg + "<br>";
+    logBox.scrollTop = logBox.scrollHeight;
+}
 
-        document.getElementById('file').addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                firmwareData = ev.target.result;
-                document.getElementById('file-label').innerHTML = `✅ <b>${file.name}</b> carregado!`;
-                document.getElementById('file-label').style.color = '#2563eb';
-                btn.disabled = false;
-                btn.innerText = "LIGAR E ATUALIZAR";
-                log("Ficheiro pronto. Ligue o pedal via USB.");
-            };
-            reader.readAsArrayBuffer(file);
+// ----- DROPZONE -----
+dropzone.addEventListener("click", () => fileInput.click());
+
+dropzone.addEventListener("dragover", e => {
+    e.preventDefault();
+    dropzone.style.borderColor = "#0f0";
+});
+dropzone.addEventListener("dragleave", () => {
+    dropzone.style.borderColor = "#666";
+});
+dropzone.addEventListener("drop", e => {
+    e.preventDefault();
+    dropzone.style.borderColor = "#666";
+
+    const file = e.dataTransfer.files[0];
+    handleFile(file);
+});
+
+// ----- INPUT FILE -----
+fileInput.addEventListener("change", e => {
+    handleFile(e.target.files[0]);
+});
+
+function handleFile(file) {
+    if (!file) return;
+
+    if (file.name !== "app.bin") {
+        log("❌ Arquivo inválido. Envie apenas app.bin");
+        return;
+    }
+
+    firmwareFile = file;
+    log("✔ Arquivo carregado: " + file.name);
+    flashBtn.disabled = false;
+}
+
+// ----- CONECTAR -----
+connectBtn.addEventListener("click", async () => {
+    try {
+        log("🔌 Solicitando dispositivo via WebUSB...");
+
+        const device = await navigator.usb.requestDevice({
+            filters: [{ vendorId: 0x303a }] // ESP32-S2 VID
         });
 
-        btn.addEventListener('click', async () => {
-            // Evita duplo clique
-            if(btn.innerText.includes("A LIGAR") || btn.innerText.includes("A GRAVAR")) return;
+        transport = new TransportWebUSB(device);
+        esploader = new ESPLoader(transport, 460800, msg => log(msg));
 
-            try {
-                if (!navigator.serial) {
-                    throw new Error("Navegador sem suporte Serial. Use Chrome ou Edge.");
+        log("Conectando ao bootloader...");
+        await esploader.main_fn();
+
+        log("✔ Conectado ao chip: " + esploader.chip.CHIP_NAME);
+        connectBtn.innerText = "Conectado";
+
+    } catch (err) {
+        log("❌ Erro ao conectar: " + err);
+    }
+});
+
+// ----- ENVIAR FIRMWARE -----
+flashBtn.addEventListener("click", async () => {
+    if (!firmwareFile) {
+        log("❌ Nenhum arquivo app.bin carregado");
+        return;
+    }
+    if (!esploader) {
+        log("❌ Conecte primeiro ao dispositivo");
+        return;
+    }
+
+    try {
+        log("📤 Iniciando envio...");
+
+        const fileArray = await firmwareFile.arrayBuffer();
+        const data = new Uint8Array(fileArray);
+
+        await esploader.write_flash(
+            [
+                {
+                    address: 0x10000,     // somente app.bin
+                    data: data
                 }
+            ],
+            "keep"
+        );
 
-                // 1. Seleção de Porta
-                log("A solicitar porta USB...");
-                const device = await navigator.serial.requestPort();
-                
-                // Verificação Extra
-                if (!device) throw new Error("Nenhum dispositivo selecionado.");
-                log("Porta selecionada. A iniciar...");
+        log("🎉 Firmware enviado com sucesso!");
+    } catch (err) {
+        log("❌ Erro durante o envio: " + err);
+    }
+});
+</script>
 
-                // 2. Inicialização
-                const transport = new Transport(device);
-                // Velocidade 460800 (Segura para S2 nativo)
-                const esploader = new ESPLoader(transport, 460800, term);
-
-                btn.disabled = true;
-                btn.innerText = "A LIGAR...";
-                log("A conectar (Modo S2)...");
-
-                // 3. Conexão
-                // 'default' permite reset automático. Se falhar aqui, é conexão física.
-                await esploader.main_fn({ mode: 'default' });
-                await esploader.flash_id();
-
-                log("✅ Chip detetado: " + esploader.chip.CHIP_NAME);
-                log("A preparar gravação...");
-
-                // 4. Gravação
-                const fileArray = [{ data: firmwareData, address: 0x10000 }];
-                btn.innerText = "A GRAVAR... NÃO DESLIGUE";
-                
-                await esploader.write_flash(
-                    fileArray,
-                    'keep', 'keep', 'keep', false, true,
-                    (fileIndex, written, total) => {
-                        const percent = Math.round((written / total) * 100);
-                        btn.innerText = `A GRAVAR: ${percent}%`;
-                        if (percent % 10 === 0) log(`Progresso: ${percent}%`);
-                    }
-                );
-
-                // 5. Sucesso
-                log("✅ GRAVAÇÃO CONCLUÍDA!");
-                btn.innerText = "SUCESSO! REINICIE O PEDAL";
-                btn.style.backgroundColor = "#16a34a";
-                btn.disabled = false;
-
-                // Reset final
-                try {
-                    await transport.setDTR(false);
-                    await transport.setRTS(true);
-                    await new Promise(r => setTimeout(r, 100));
-                    await transport.setRTS(false);
-                } catch(e) {}
-                
-                await transport.disconnect();
-
-            } catch (e) {
-                console.error(e);
-                const msg = e.message || e.toString();
-
-                // Erros de Desconexão/Reset (Comuns e normais no S2)
-                if (msg.includes("NetworkError") || msg.includes("lost") || msg.includes("disconnect")) {
-                    log("\n⚠️ O PEDAL REINICIOU (Normal).");
-                    log("O Mac ejetou o disco porque entrou em modo flash.");
-                    log("👉 Clique em 'CONTINUAR' para finalizar.");
-                    
-                    showAlert("O dispositivo reiniciou. Clique em CONTINUAR e selecione a porta USB novamente.");
-                    
-                    btn.innerText = "CONTINUAR (TENTAR NOVAMENTE)";
-                    btn.style.backgroundColor = "#f59e0b";
-                    btn.disabled = false;
-                } else {
-                    log("❌ ERRO: " + msg);
-                    btn.innerText = "ERRO - TENTE DE NOVO";
-                    btn.style.backgroundColor = "#dc2626";
-                    btn.disabled = false;
-                }
-            }
-        });
-    </script>
 </body>
 </html>
