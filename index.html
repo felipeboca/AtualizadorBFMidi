@@ -6,7 +6,7 @@
     <title>Atualizador BFMIDI</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f0f2f5; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
-        .box { background: white; padding: 2.5rem; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 540px; text-align: center; }
+        .box { background: white; padding: 2.5rem; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 500px; text-align: center; }
         h1 { color: #111; margin-bottom: 0.5rem; }
         .subtitle { color: #666; margin-bottom: 2rem; font-size: 0.95rem; }
         
@@ -16,12 +16,9 @@
         
         .log { background: #0f172a; color: #4ade80; padding: 15px; border-radius: 10px; text-align: left; font-family: 'SF Mono', monospace; height: 220px; overflow-y: auto; margin-top: 20px; font-size: 11px; line-height: 1.5; white-space: pre-wrap; border: 1px solid #1e293b; }
         
-        .file-box { border: 2px dashed #cbd5e1; padding: 30px; border-radius: 12px; margin: 20px 0; cursor: pointer; background: #f8fafc; transition: all 0.2s; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:8px; }
+        .file-box { border: 2px dashed #cbd5e1; padding: 30px; border-radius: 12px; margin: 20px 0; cursor: pointer; background: #f8fafc; transition: all 0.2s; }
         .file-box:hover { background: #eff6ff; border-color: #2563eb; }
-        .file-box.dragover { background:#eef9ff; border-color:#0ea5e9; box-shadow:0 6px 18px rgba(14,165,233,0.08); }
-        .file-name { color:#0f172a; font-weight:600; }
-        .file-hint { color:#475569; font-size:0.9rem; }
-
+        
         .alert { background: #fff7ed; color: #9a3412; padding: 12px; border-radius: 8px; font-size: 0.9em; margin-bottom: 15px; display: none; text-align: left; border-left: 4px solid #f97316; }
     </style>
 </head>
@@ -33,216 +30,143 @@
 
         <div id="alert-box" class="alert"></div>
 
-        <div id="file-box" class="file-box" title="Clique ou arraste o ficheiro app.bin">
-            <div style="font-size: 28px;">📂</div>
-            <div id="file-label" class="file-name">Clique para selecionar o ficheiro <b>app.bin</b></div>
-            <div class="file-hint">Arraste & solte ou clique para abrir o seletor</div>
+        <div class="file-box" onclick="document.getElementById('file').click()">
             <input type="file" id="file" accept=".bin" style="display: none">
+            <div id="file-label">
+                <div style="font-size: 24px; margin-bottom: 10px">📂</div>
+                Clique para selecionar o ficheiro <b>app.bin</b>
+            </div>
         </div>
 
         <button id="btn" class="btn" disabled>Carregue o ficheiro primeiro</button>
         <div id="log" class="log">A aguardar início...</div>
     </div>
 
+    <!-- Usamos a versão mais recente do bundle e importamos como módulo -->
     <script type="module">
-    // Usa bundle que exporta ESPLoader e TransportWebUSB
-    import { ESPLoader, TransportWebUSB } from 'https://cdn.jsdelivr.net/npm/esptool-js@0.5.4/bundle.min.js';
+        import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.5.4/bundle.js';
 
-    const btn = document.getElementById('btn');
-    const logBox = document.getElementById('log');
-    const alertBox = document.getElementById('alert-box');
-    const fileInput = document.getElementById('file');
-    const fileBox = document.getElementById('file-box');
-    const fileLabel = document.getElementById('file-label');
+        const btn = document.getElementById('btn');
+        const logBox = document.getElementById('log');
+        const alertBox = document.getElementById('alert-box');
+        let firmwareData = null;
 
-    let firmwareData = null;
-    let firmwareName = null;
-    let esploader = null;
-    let transport = null;
+        const term = {
+            clean: () => {},
+            writeLine: (d) => {},
+            write: (d) => {}
+        };
 
-    // Terminal simulado para esptool-js
-    const term = {
-        clean: () => {},
-        writeLine: (d) => { appendLog(String(d)); },
-        write: (d) => { appendLog(String(d)); }
-    };
-
-    function appendLog(msg) {
-        const now = new Date().toLocaleTimeString();
-        logBox.innerText += `[${now}] ${msg}\n`;
-        logBox.scrollTop = logBox.scrollHeight;
-    }
-
-    function showAlert(html) {
-        alertBox.style.display = 'block';
-        alertBox.innerHTML = html;
-    }
-    function hideAlert() {
-        alertBox.style.display = 'none';
-        alertBox.innerHTML = '';
-    }
-
-    // --- File handling (click + drag/drop) ---
-    fileBox.addEventListener('click', () => fileInput.click());
-
-    fileBox.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        fileBox.classList.add('dragover');
-    });
-
-    fileBox.addEventListener('dragleave', (e) => {
-        e.preventDefault();
-        fileBox.classList.remove('dragover');
-    });
-
-    fileBox.addEventListener('drop', (e) => {
-        e.preventDefault();
-        fileBox.classList.remove('dragover');
-        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-            handleFile(e.dataTransfer.files[0]);
-        }
-    });
-
-    fileInput.addEventListener('change', (e) => {
-        if (e.target.files && e.target.files.length > 0) {
-            handleFile(e.target.files[0]);
-        }
-    });
-
-    function handleFile(file) {
-        hideAlert();
-
-        if (!file) return;
-        if (file.name.toLowerCase() !== 'app.bin') {
-            showAlert('⚠️ Apenas ficheiro com nome <b>app.bin</b> é permitido. Renomeie e tente novamente.');
-            appendLog(`Arquivo rejeitado: ${file.name}`);
-            firmwareData = null;
-            firmwareName = null;
-            fileLabel.innerHTML = `❌ ${file.name} — renomeie para <b>app.bin</b>`;
-            btn.disabled = true;
-            return;
+        function log(msg) {
+            logBox.innerHTML += `> ${msg}\n`;
+            logBox.scrollTop = logBox.scrollHeight;
         }
 
-        firmwareName = file.name;
-        // lê o ficheiro
-        file.arrayBuffer().then(buf => {
-            firmwareData = buf;
-            fileLabel.innerHTML = `✅ <b>${file.name}</b> pronto para enviar`;
-            appendLog(`Ficheiro carregado: ${file.name} (${(file.size/1024).toFixed(1)} KB)`);
-            btn.disabled = false;
-            btn.innerText = "LIGAR E ATUALIZAR";
-        }).catch(err => {
-            firmwareData = null;
-            appendLog('Erro ao ler ficheiro: ' + err);
-            showAlert('Erro ao ler ficheiro. Tente novamente.');
+        function showAlert(msg) {
+            alertBox.style.display = 'block';
+            alertBox.innerHTML = `⚠️ <b>Nota:</b> ${msg}`;
+        }
+
+        document.getElementById('file').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                firmwareData = ev.target.result;
+                document.getElementById('file-label').innerHTML = `✅ <b>${file.name}</b> pronto!`;
+                document.getElementById('file-label').style.color = '#2563eb';
+                btn.disabled = false;
+                btn.innerText = "LIGAR E ATUALIZAR";
+                log(`Ficheiro carregado. Clique no botão azul.`);
+            };
+            reader.readAsArrayBuffer(file);
         });
-    }
 
-    // --- Botão principal ---
-    btn.addEventListener('click', async () => {
-        // evita duplo clique durante processo
-        if (btn.innerText.includes("A LIGAR") || btn.innerText.includes("A GRAVAR")) return;
+        btn.addEventListener('click', async () => {
+            if(btn.innerText.includes("A LIGAR") || btn.innerText.includes("A GRAVAR")) return;
 
-        try {
-            hideAlert();
-
-            if (!firmwareData) {
-                appendLog("Nenhum ficheiro carregado.");
-                return;
-            }
-
-            // Verifica WebUSB suportado
-            if (!navigator.usb) {
-                throw new Error("Navegador sem suporte WebUSB. Use Chrome/Edge e sirva a página via HTTPS ou localhost.");
-            }
-
-            appendLog("A solicitar dispositivo USB (WebUSB)...");
-            // Filtro com VID Espressif. Se não aparecer, remova filters.
-            const device = await navigator.usb.requestDevice({ filters: [{ vendorId: 0x303a }] });
-
-            if (!device) throw new Error("Nenhum dispositivo selecionado.");
-
-            appendLog("Dispositivo selecionado: " + (device.productName || 'USB device'));
-
-            // Cria transport WebUSB e esploader
-            transport = new TransportWebUSB(device);
-
-            // Alguns bundles requerem open explícito — tenta com segurança
-            if (typeof transport.open === 'function') {
-                try { await transport.open(); } catch(e) { /* ignora se já aberto internamente */ }
-            }
-
-            esploader = new ESPLoader(transport, 460800, term);
-
-            btn.disabled = true;
-            btn.innerText = "A LIGAR...";
-            appendLog("A conectar ao bootloader...");
-
-            // Conectar e detectar
-            await esploader.main_fn({ mode: 'default' });
-            await esploader.flash_id();
-
-            appendLog("✅ Chip detectado: " + (esploader.chip && esploader.chip.CHIP_NAME ? esploader.chip.CHIP_NAME : 'UNKNOWN'));
-            appendLog("A preparar gravação...");
-
-            // Prepara gravação apenas de app.bin em 0x10000
-            const fileArray = [{ data: firmwareData, address: 0x10000 }];
-
-            btn.innerText = "A GRAVAR... NÃO DESLIGUE";
-
-            await esploader.write_flash(
-                fileArray,
-                'keep', 'keep', 'keep', false, true,
-                (fileIndex, written, total) => {
-                    const percent = Math.round((written / total) * 100);
-                    btn.innerText = `A GRAVAR: ${percent}%`;
-                    if (percent % 10 === 0) appendLog(`Progresso: ${percent}%`);
-                }
-            );
-
-            appendLog("✅ GRAVAÇÃO CONCLUÍDA!");
-            btn.innerText = "SUCESSO! REINICIE O PEDAL";
-            btn.style.backgroundColor = "#16a34a";
-            btn.disabled = false;
-
-            // Tentativa de reset gracioso
             try {
-                if (typeof transport.setDTR === 'function') await transport.setDTR(false);
-                if (typeof transport.setRTS === 'function') {
-                    await transport.setRTS(true);
-                    await new Promise(r => setTimeout(r, 120));
-                    await transport.setRTS(false);
+                if (!navigator.serial) throw new Error("Navegador incompatível. Use Chrome/Edge.");
+
+                log("A solicitar porta USB...");
+                const device = await navigator.serial.requestPort();
+                log("Porta capturada! ID: " + (device.getInfo().usbVendorId || 'OK'));
+
+                // --- AQUI ESTÁ A CORREÇÃO NUCLEAR ---
+                // Criamos o transporte normalmente
+                const transport = new Transport(device);
+                
+                // Força bruta: Garante que o dispositivo está atribuído corretamente dentro da classe
+                // O erro 'undefined reading getInfo' acontece porque transport.device às vezes fica vazio
+                if (!transport.device) {
+                    console.log("Aplicando Patch de Dispositivo Manual...");
+                    transport.device = device;
                 }
-            } catch(e) {}
 
-            // Desconectar
-            try { if (typeof transport.disconnect === 'function') await transport.disconnect(); } catch(e) {}
+                // Verificação extra antes de prosseguir para o Loader
+                if (!transport.device) throw new Error("Falha crítica: O transporte perdeu a referência do dispositivo.");
 
-        } catch (e) {
-            console.error(e);
-            const msg = e && e.message ? e.message : String(e);
+                const esploader = new ESPLoader(transport, 460800, term);
 
-            // Mensagens esperadas quando o dispositivo reinicia durante o processo
-            if (msg.includes("NetworkError") || msg.includes("lost") || msg.includes("disconnected") || msg.includes("cannot") ) {
-                appendLog("\n⚠️ O dispositivo pode ter reiniciado (comportamento normal).");
-                appendLog("Se o seu sistema montou um dispositivo USB, seleccione-o novamente.");
-                showAlert("O dispositivo reiniciou. Selecione o dispositivo outra vez e clique em LIGAR E ATUALIZAR se necessário.");
-                btn.innerText = "CONTINUAR (TENTAR NOVAMENTE)";
-                btn.style.backgroundColor = "#f59e0b";
+                btn.disabled = true;
+                btn.innerText = "A LIGAR...";
+                log("A conectar (Modo S2)...");
+
+                // Tenta conectar
+                await esploader.main_fn({ mode: 'default' });
+                await esploader.flash_id();
+
+                log("✅ Chip detetado: " + esploader.chip.CHIP_NAME);
+                log("A preparar gravação...");
+
+                const fileArray = [{ data: firmwareData, address: 0x10000 }];
+                btn.innerText = "A GRAVAR... NÃO DESLIGUE";
+                
+                await esploader.write_flash(
+                    fileArray,
+                    'keep', 'keep', 'keep', false, true,
+                    (fileIndex, written, total) => {
+                        const percent = Math.round((written / total) * 100);
+                        btn.innerText = `GRAVANDO: ${percent}%`;
+                        if (percent % 5 === 0) log(`Progresso: ${percent}%`);
+                    }
+                );
+
+                log("✅ GRAVAÇÃO CONCLUÍDA!");
+                btn.innerText = "SUCESSO! REINICIE O PEDAL";
+                btn.style.backgroundColor = "#16a34a";
                 btn.disabled = false;
-            } else {
-                appendLog("❌ ERRO: " + msg);
-                showAlert("<b>Erro:</b> " + msg);
-                btn.innerText = "ERRO - TENTE DE NOVO";
-                btn.style.backgroundColor = "#dc2626";
-                btn.disabled = false;
+
+                try {
+                    await transport.setDTR(false);
+                    await transport.setRTS(true);
+                    await new Promise(r => setTimeout(r, 100));
+                    await transport.setRTS(false);
+                } catch(e) {}
+                
+                await transport.disconnect();
+
+            } catch (e) {
+                console.error(e);
+                const msg = e.message || e.toString();
+
+                if (msg.includes("NetworkError") || msg.includes("lost") || msg.includes("disconnect")) {
+                    log("\n⚠️ O PEDAL REINICIOU (EJETADO).");
+                    log("Isto é normal no S2. O processo pode ter concluído.");
+                    log("Verifique o pedal. Se não atualizou, tente de novo.");
+                    
+                    showAlert("O dispositivo reiniciou. Se a barra chegou ao fim, está tudo bem. Se não, tente de novo.");
+                    btn.innerText = "TENTAR NOVAMENTE";
+                    btn.style.backgroundColor = "#f59e0b";
+                    btn.disabled = false;
+                } else {
+                    log("❌ ERRO: " + msg);
+                    btn.innerText = "ERRO - TENTE DE NOVO";
+                    btn.style.backgroundColor = "#dc2626";
+                    btn.disabled = false;
+                }
             }
-        }
-    });
-
-    // Log inicial
-    appendLog("Interface pronta. Carregue o ficheiro app.bin ou arraste para a caixa acima.");
-    appendLog("Nota: sirva esta página via http://localhost ou HTTPS (Chrome bloqueia recursos quando aberto via file://).");
+        });
     </script>
 </body>
 </html>
