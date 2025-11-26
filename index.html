@@ -5,42 +5,72 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Atualizador BFMIDI</title>
     <style>
-        body { font-family: sans-serif; background: #f0f2f5; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
-        .box { background: white; padding: 2rem; border-radius: 1rem; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 480px; text-align: center; }
-        h1 { color: #1a1a1a; margin-bottom: 0.5rem; }
-        .btn { background: #2563eb; color: white; border: none; padding: 15px; width: 100%; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 16px; margin-top: 10px; }
-        .btn:disabled { background: #ccc; cursor: not-allowed; }
-        .log { background: #1e1e1e; color: #00ff00; padding: 15px; border-radius: 8px; text-align: left; font-family: monospace; height: 200px; overflow-y: auto; margin-top: 20px; font-size: 12px; }
-        .file-box { border: 2px dashed #ccc; padding: 20px; border-radius: 8px; margin: 20px 0; cursor: pointer; }
-        .file-box:hover { background: #f9f9f9; border-color: #2563eb; }
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f0f2f5; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
+        .box { background: white; padding: 2rem; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 500px; text-align: center; }
+        h1 { color: #111; margin-bottom: 0.5rem; }
+        .subtitle { color: #666; margin-bottom: 2rem; }
+        
+        .btn { background: #2563eb; color: white; border: none; padding: 16px; width: 100%; border-radius: 10px; font-weight: 600; cursor: pointer; font-size: 16px; margin-top: 15px; transition: all 0.2s; }
+        .btn:disabled { background: #e2e8f0; color: #94a3b8; cursor: not-allowed; }
+        .btn:hover:not(:disabled) { background: #1d4ed8; }
+        
+        .log { background: #0f172a; color: #22c55e; padding: 15px; border-radius: 10px; text-align: left; font-family: 'SF Mono', monospace; height: 220px; overflow-y: auto; margin-top: 20px; font-size: 11px; line-height: 1.5; white-space: pre-wrap; }
+        
+        .file-box { border: 2px dashed #cbd5e1; padding: 30px; border-radius: 12px; margin: 20px 0; cursor: pointer; background: #f8fafc; transition: all 0.2s; }
+        .file-box:hover { background: #eff6ff; border-color: #2563eb; }
+        
+        .alert { background: #fef3c7; color: #92400e; padding: 10px; border-radius: 8px; font-size: 0.9em; margin-bottom: 15px; display: none; text-align: left; border-left: 4px solid #f59e0b; }
     </style>
 </head>
 <body>
 
     <div class="box">
         <h1>Atualizador BFMIDI</h1>
-        <p style="color: #666">Versão Final (Módulo v1.5)</p>
+        <p class="subtitle">Ferramenta Oficial (v2.0 Blindada)</p>
+
+        <div id="alert-box" class="alert"></div>
 
         <div class="file-box" onclick="document.getElementById('file').click()">
             <input type="file" id="file" accept=".bin" style="display: none">
-            <div id="file-label">📂 Clique para selecionar <b>app.bin</b></div>
+            <div id="file-label">
+                <div style="font-size: 24px; margin-bottom: 10px">📂</div>
+                Clique para selecionar o ficheiro <b>app.bin</b>
+            </div>
         </div>
 
-        <button id="btn" class="btn" disabled>Aguardando ficheiro...</button>
-        <div id="log" class="log">A aguardar início...</div>
+        <button id="btn" class="btn" disabled>Carregue o ficheiro primeiro</button>
+        <div id="log" class="log">Aguardando início...</div>
     </div>
 
-    <!-- SCRIPT TIPO MÓDULO (Resolve o erro 'Unexpected keyword export') -->
+    <!-- Usamos type="module" para evitar erro de sintaxe na biblioteca moderna -->
     <script type="module">
         import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.5.4/bundle.js';
 
         const btn = document.getElementById('btn');
         const logBox = document.getElementById('log');
+        const alertBox = document.getElementById('alert-box');
         let firmwareData = null;
+
+        // Objeto terminal simulado para evitar erro de 'undefined' ao escrever logs internos
+        const dummyTerminal = {
+            clean: () => {},
+            writeLine: (data) => { 
+                // Opcional: descomentar para ver logs internos da lib
+                // console.log(data); 
+            },
+            write: (data) => { 
+                // console.log(data); 
+            }
+        };
 
         function log(msg) {
             logBox.innerHTML += `> ${msg}\n`;
             logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        function showAlert(msg) {
+            alertBox.style.display = 'block';
+            alertBox.innerHTML = `⚠️ <b>Atenção:</b> ${msg}`;
         }
 
         document.getElementById('file').addEventListener('change', (e) => {
@@ -49,74 +79,71 @@
             const reader = new FileReader();
             reader.onload = (ev) => {
                 firmwareData = ev.target.result;
-                document.getElementById('file-label').innerHTML = `✅ <b>${file.name}</b> pronto!`;
+                document.getElementById('file-label').innerHTML = `✅ <b>${file.name}</b> carregado!`;
+                document.getElementById('file-label').style.color = '#2563eb';
                 btn.disabled = false;
-                btn.innerText = "LIGAR E ATUALIZAR";
-                btn.style.backgroundColor = "#2563eb";
-                log("Ficheiro carregado. Clique no botão azul.");
+                btn.innerText = "CONECTAR E ATUALIZAR";
+                log("Ficheiro pronto. Ligue o pedal e clique no botão azul.");
             };
             reader.readAsArrayBuffer(file);
         });
 
         btn.addEventListener('click', async () => {
             try {
-                // 1. Verificar suporte Web Serial
                 if (!navigator.serial) {
-                    throw new Error("O seu navegador não suporta Web Serial. Use o Chrome ou Edge.");
+                    throw new Error("Navegador incompatível. Use Chrome ou Edge.");
                 }
 
-                // 2. Pedir Porta USB
+                // PASSO 1: Seleção da Porta
                 log("A solicitar porta USB...");
                 const device = await navigator.serial.requestPort();
-                
-                if (!device) {
-                    throw new Error("Nenhum dispositivo selecionado.");
-                }
-                log("Porta selecionada!");
+                log("Porta selecionada. A iniciar transporte...");
 
-                // 3. Configurar Conexão
-                // A inicialização é feita aqui para garantir que 'device' existe
-                log("A preparar transporte...");
+                // PASSO 2: Inicialização
                 const transport = new Transport(device);
                 
-                // 4. Configurar Loader (Velocidade 460800 é ideal para S2 nativo)
-                log("A configurar Loader...");
-                const esploader = new ESPLoader(transport, 460800, null);
+                // Usamos 115200 para máxima estabilidade inicial
+                // Passamos dummyTerminal em vez de null para evitar crashes
+                const esploader = new ESPLoader(transport, 115200, dummyTerminal);
 
-                // 5. Conectar
                 btn.disabled = true;
                 btn.innerText = "A LIGAR...";
-                log("A ligar ao pedal...");
-                
-                // mode: 'default' é necessário para a versão 0.5.4 no ESP32-S2
-                await esploader.main_fn({ mode: 'default' });
-                await esploader.flash_id();
+                log("A conectar ao pedal...");
 
-                log("SUCESSO: Chip " + esploader.chip.CHIP_NAME + " detetado!");
+                // PASSO 3: Conexão
+                // Tenta conectar. Se o dispositivo reiniciar (ejetar), tratamos no catch.
+                try {
+                    await esploader.main_fn({ mode: 'default' });
+                    await esploader.flash_id();
+                } catch (err) {
+                    // Se falhar aqui, pode ser o reset do S2. Vamos verificar.
+                    throw err;
+                }
 
-                // 6. Gravar
-                log("A iniciar gravação em 0x10000...");
-                btn.innerText = "A GRAVAR...";
+                log("✅ Chip detetado: " + esploader.chip.CHIP_NAME);
+                log("A preparar gravação...");
 
+                // PASSO 4: Gravação
                 const fileArray = [{ data: firmwareData, address: 0x10000 }];
+                btn.innerText = "A GRAVAR... NÃO DESLIGUE";
                 
                 await esploader.write_flash(
                     fileArray,
                     'keep', 'keep', 'keep', false, true,
                     (fileIndex, written, total) => {
                         const percent = Math.round((written / total) * 100);
-                        btn.innerText = `A GRAVAR: ${percent}%`;
-                        // Log a cada 10% para não sobrecarregar
-                        if (percent % 10 === 0 && percent > 0) log(`Progresso: ${percent}%`);
+                        btn.innerText = `GRAVANDO: ${percent}%`;
+                        if (percent % 5 === 0) log(`Progresso: ${percent}%`);
                     }
                 );
 
-                log("✅ GRAVAÇÃO CONCLUÍDA!");
-                btn.innerText = "SUCESSO!";
+                // SUCESSO
+                log("✅ GRAVAÇÃO CONCLUÍDA COM SUCESSO!");
+                btn.innerText = "SUCESSO! REINICIE O PEDAL";
                 btn.style.backgroundColor = "#16a34a";
                 btn.disabled = false;
-
-                // Reset
+                
+                // Tenta reset final
                 await transport.setDTR(false);
                 await transport.setRTS(true);
                 await new Promise(r => setTimeout(r, 100));
@@ -125,19 +152,36 @@
 
             } catch (e) {
                 console.error(e);
-                log("❌ ERRO: " + e.message);
                 
-                if (e.message.includes("NetworkError") || e.message.includes("lost") || e.message.includes("disconnect")) {
-                    log("⚠️ O pedal reiniciou (Dispositivo Ejetado).");
-                    log("Isto é normal em alguns S2.");
-                    log("Clique em 'TENTAR NOVAMENTE' agora.");
-                    btn.innerText = "TENTAR NOVAMENTE";
-                    btn.style.backgroundColor = "#f59e0b";
+                // Diagnóstico Inteligente de Erros
+                const errMsg = e.message || e.toString();
+                
+                if (errMsg.includes("NetworkError") || errMsg.includes("lost") || errMsg.includes("disconnect")) {
+                    // ESTE É O CENÁRIO COMUM DO S2
+                    log("\n⚠️ O DISPOSITIVO REINICIOU (EJETADO).");
+                    log("Isto é normal! O pedal entrou em modo de atualização.");
+                    log("➡️ POR FAVOR, CLIQUE EM 'CONTINUAR' AGORA.");
+                    
+                    btn.innerText = "CONTINUAR (TENTAR NOVAMENTE)";
+                    btn.style.backgroundColor = "#f59e0b"; // Laranja
                     btn.disabled = false;
-                } else {
-                    btn.innerText = "ERRO - TENTE DE NOVO";
+                    
+                    showAlert("O Mac ejetou o dispositivo porque ele reiniciou. <b>Isto é bom sinal!</b> Clique em CONTINUAR e selecione a porta novamente para finalizar.");
+                } 
+                else if (errMsg.includes("undefined") && errMsg.includes("getInfo")) {
+                    // Erro específico da biblioteca corrigido com o dummyTerminal, 
+                    // mas se aparecer, damos uma dica.
+                    log("❌ Erro de compatibilidade USB.");
+                    log("Tente desconectar e reconectar o cabo.");
+                    btn.innerText = "TENTAR DE NOVO";
+                    btn.disabled = false;
                     btn.style.backgroundColor = "#dc2626";
+                }
+                else {
+                    log("❌ ERRO: " + errMsg);
+                    btn.innerText = "ERRO - TENTE DE NOVO";
                     btn.disabled = false;
+                    btn.style.backgroundColor = "#dc2626";
                 }
             }
         });
