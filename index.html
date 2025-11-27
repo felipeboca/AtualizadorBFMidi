@@ -28,7 +28,7 @@
 
     <div class="box">
         <h1>Atualizador BFMIDI</h1>
-        <p class="subtitle">Versão Final (v30.0 - USB Reset Logic)</p>
+        <p class="subtitle">Versão v31.0 (Correção de Porta Presa)</p>
 
         <div class="file-box" onclick="document.getElementById('file').click()">
             <input type="file" id="file" accept=".bin" style="display: none">
@@ -101,25 +101,36 @@
                 log("> Porta selecionada. A iniciar...");
 
                 const transport = new Transport(device);
-                // Tenta conectar a 115200 primeiro para o handshake, depois sobe
                 const esploader = new ESPLoader(transport, baudRate, term);
 
                 btn.disabled = true;
                 btn.innerText = "A LIGAR...";
                 
-                log("> A conectar (Modo USB Reset)...");
+                log("> A conectar (Tentativa 1)...");
                 
-                // ESTRATÉGIA V30: Tentar conectar repetidamente se falhar a primeira
-                // Muitos S2 precisam de 2-3 tentativas para sincronizar o bootloader
+                // LOOP DE TENTATIVAS COM LIMPEZA DE PORTA
+                let connected = false;
                 for (let i = 0; i < 3; i++) {
                     try {
-                        // 'usb_reset' é menos agressivo que 'default_reset' para S2
-                        await esploader.main_fn({ mode: 'usb_reset' });
+                        if (i > 0) log(`> A tentar novamente (Tentativa ${i+1})...`);
+                        
+                        // Tenta conectar com 'default_reset' (igual ao site oficial)
+                        // Se falhar, vai para o catch
+                        await esploader.main_fn();
                         await esploader.flash_id();
-                        break; // Sucesso! Sai do loop
+                        
+                        connected = true;
+                        break; // Sucesso!
                     } catch (e) {
-                        if (i === 2) throw e; // Se falhar na 3ª, desiste
-                        log(`> Tentativa ${i+1} falhou. A tentar novamente...`);
+                        console.warn("Tentativa falhou:", e);
+                        
+                        // CRÍTICO: Fechar a porta antes de tentar de novo!
+                        // Se não fecharmos, a próxima tentativa dá "Failed to open"
+                        try {
+                            await transport.disconnect();
+                        } catch (err) { /* Ignora erro ao fechar */ }
+                        
+                        if (i === 2) throw e; // Se foi a última, lança o erro
                         await new Promise(r => setTimeout(r, 1000)); // Espera 1s
                     }
                 }
@@ -160,15 +171,22 @@
                 
                 log(`> ❌ ERRO: ${msg}`);
                 
-                if (msg.includes("Timeout") || msg.includes("No serial data")) {
+                if (msg.includes("Failed to open")) {
+                    log("> A porta está presa ou ocupada.");
+                    log("> DICA: Desconecte e reconecte o cabo USB fisicamente.");
+                    log("> Feche outras abas que estejam a usar o pedal.");
+                    btn.innerText = "TENTAR NOVAMENTE";
+                    btn.className = "btn retry";
+                    btn.disabled = false;
+                }
+                else if (msg.includes("Timeout") || msg.includes("No serial data")) {
                     log("> ERRO DE COMUNICAÇÃO.");
-                    log("> Tente baixar a velocidade para 115200.");
+                    log("> Dica: Se estiver a usar um Hub USB, tente ligar direto.");
                     btn.innerText = "TENTAR NOVAMENTE";
                     btn.className = "btn retry";
                     btn.disabled = false;
                 } else if (msg.includes("NetworkError") || msg.includes("lost") || msg.includes("disconnect")) {
-                    log("> O pedal reiniciou (Disco Ejetado).");
-                    log("> Isto é normal. CLIQUE EM 'TENTAR NOVAMENTE' AGORA.");
+                    log("> O pedal reiniciou. CLIQUE EM 'TENTAR NOVAMENTE'.");
                     btn.innerText = "TENTAR NOVAMENTE";
                     btn.className = "btn retry";
                     btn.disabled = false;
