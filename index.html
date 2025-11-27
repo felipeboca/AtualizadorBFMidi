@@ -19,16 +19,13 @@
         
         .file-box { border: 2px dashed #cbd5e1; padding: 30px; border-radius: 12px; margin: 20px 0; cursor: pointer; background: #f8fafc; transition: all 0.2s; }
         .file-box:hover { background: #eff6ff; border-color: #2563eb; }
-        
-        .options { display: flex; gap: 10px; margin-top: 10px; justify-content: center; }
-        select { padding: 8px; border-radius: 6px; border: 1px solid #ccc; }
     </style>
 </head>
 <body>
 
     <div class="box">
         <h1>Atualizador BFMIDI</h1>
-        <p class="subtitle">Versão v31.0 (Correção de Porta Presa)</p>
+        <p class="subtitle">Versão v32.0 (Velocidade Automática)</p>
 
         <div class="file-box" onclick="document.getElementById('file').click()">
             <input type="file" id="file" accept=".bin" style="display: none">
@@ -36,17 +33,6 @@
                 <div style="font-size: 24px; margin-bottom: 10px">📂</div>
                 Clique para selecionar o ficheiro <b>app.bin</b>
             </div>
-        </div>
-
-        <div class="options">
-            <label>Velocidade:
-                <select id="baudrate">
-                    <option value="115200">115200 (Seguro)</option>
-                    <option value="230400">230400 (Médio)</option>
-                    <option value="460800" selected>460800 (Padrão S2)</option>
-                    <option value="921600">921600 (Turbo)</option>
-                </select>
-            </label>
         </div>
 
         <button id="btn" class="btn" disabled>Carregue o ficheiro primeiro</button>
@@ -59,7 +45,6 @@
 
         const btn = document.getElementById('btn');
         const logBox = document.getElementById('log');
-        const baudSelect = document.getElementById('baudrate');
         let firmwareData = null;
 
         const term = {
@@ -83,7 +68,7 @@
                 document.getElementById('file-label').style.color = '#2563eb';
                 btn.disabled = false;
                 btn.innerText = "LIGAR E ATUALIZAR";
-                log(`> Ficheiro carregado (${file.size} bytes).`);
+                log(`> Ficheiro carregado. Clique no botão azul.`);
             };
             reader.readAsArrayBuffer(file);
         });
@@ -94,44 +79,44 @@
             try {
                 if (!navigator.serial) throw new Error("Navegador incompatível. Use Chrome/Edge.");
 
-                const baudRate = parseInt(baudSelect.value);
-                log(`> A solicitar porta USB (Velocidade: ${baudRate})...`);
-                
+                log(`> A solicitar porta USB...`);
                 const device = await navigator.serial.requestPort();
                 log("> Porta selecionada. A iniciar...");
 
                 const transport = new Transport(device);
-                const esploader = new ESPLoader(transport, baudRate, term);
-
-                btn.disabled = true;
-                btn.innerText = "A LIGAR...";
                 
-                log("> A conectar (Tentativa 1)...");
-                
-                // LOOP DE TENTATIVAS COM LIMPEZA DE PORTA
+                // --- LÓGICA ADAPTATIVA ---
+                let esploader = null;
                 let connected = false;
-                for (let i = 0; i < 3; i++) {
+                
+                // Tenta primeiro a 460800 (Ideal para upload rápido)
+                try {
+                    log("> Tentativa 1: Velocidade 460800...");
+                    esploader = new ESPLoader(transport, 460800, term);
+                    btn.disabled = true;
+                    btn.innerText = "A LIGAR...";
+                    
+                    await esploader.main_fn();
+                    await esploader.flash_id();
+                    connected = true;
+                } catch (e) {
+                    log("> Falha a 460800. A tentar velocidade segura...");
                     try {
-                        if (i > 0) log(`> A tentar novamente (Tentativa ${i+1})...`);
-                        
-                        // Tenta conectar com 'default_reset' (igual ao site oficial)
-                        // Se falhar, vai para o catch
+                        await transport.disconnect();
+                    } catch(err) {}
+                    await new Promise(r => setTimeout(r, 500));
+                }
+
+                // Se falhou, tenta a 115200 (Lento mas seguro)
+                if (!connected) {
+                    try {
+                        log("> Tentativa 2: Velocidade 115200...");
+                        esploader = new ESPLoader(transport, 115200, term);
                         await esploader.main_fn();
                         await esploader.flash_id();
-                        
                         connected = true;
-                        break; // Sucesso!
                     } catch (e) {
-                        console.warn("Tentativa falhou:", e);
-                        
-                        // CRÍTICO: Fechar a porta antes de tentar de novo!
-                        // Se não fecharmos, a próxima tentativa dá "Failed to open"
-                        try {
-                            await transport.disconnect();
-                        } catch (err) { /* Ignora erro ao fechar */ }
-                        
-                        if (i === 2) throw e; // Se foi a última, lança o erro
-                        await new Promise(r => setTimeout(r, 1000)); // Espera 1s
+                        throw e; // Se falhar aqui, desiste
                     }
                 }
 
@@ -171,22 +156,15 @@
                 
                 log(`> ❌ ERRO: ${msg}`);
                 
-                if (msg.includes("Failed to open")) {
-                    log("> A porta está presa ou ocupada.");
-                    log("> DICA: Desconecte e reconecte o cabo USB fisicamente.");
-                    log("> Feche outras abas que estejam a usar o pedal.");
+                if (msg.includes("NetworkError") || msg.includes("lost") || msg.includes("disconnect")) {
+                    log("> O pedal reiniciou (Disco Ejetado).");
+                    log("> Isto é normal. CLIQUE EM 'TENTAR NOVAMENTE' AGORA.");
                     btn.innerText = "TENTAR NOVAMENTE";
                     btn.className = "btn retry";
                     btn.disabled = false;
-                }
-                else if (msg.includes("Timeout") || msg.includes("No serial data")) {
-                    log("> ERRO DE COMUNICAÇÃO.");
-                    log("> Dica: Se estiver a usar um Hub USB, tente ligar direto.");
-                    btn.innerText = "TENTAR NOVAMENTE";
-                    btn.className = "btn retry";
-                    btn.disabled = false;
-                } else if (msg.includes("NetworkError") || msg.includes("lost") || msg.includes("disconnect")) {
-                    log("> O pedal reiniciou. CLIQUE EM 'TENTAR NOVAMENTE'.");
+                } else if (msg.includes("Timeout")) {
+                    log("> Erro de Timeout persistente.");
+                    log("> Tente desconectar e reconectar o cabo USB.");
                     btn.innerText = "TENTAR NOVAMENTE";
                     btn.className = "btn retry";
                     btn.disabled = false;
