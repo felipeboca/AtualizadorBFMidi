@@ -13,6 +13,7 @@
         .btn { background: #2563eb; color: white; border: none; padding: 16px; width: 100%; border-radius: 10px; font-weight: 600; cursor: pointer; font-size: 16px; margin-top: 15px; transition: all 0.2s; }
         .btn:disabled { background: #e2e8f0; color: #94a3b8; cursor: not-allowed; }
         .btn:hover:not(:disabled) { background: #1d4ed8; }
+        .btn.retry { background: #f59e0b; }
         
         .log { background: #1e1e1e; color: #e2e8f0; padding: 15px; border-radius: 10px; text-align: left; font-family: 'SF Mono', monospace; height: 350px; overflow-y: auto; margin-top: 20px; font-size: 11px; line-height: 1.5; white-space: pre-wrap; border: 1px solid #333; }
         
@@ -27,7 +28,7 @@
 
     <div class="box">
         <h1>Atualizador BFMIDI</h1>
-        <p class="subtitle">Versão Final (v29.0 Módulo + Seletor de Velocidade)</p>
+        <p class="subtitle">Versão Final (v30.0 - USB Reset Logic)</p>
 
         <div class="file-box" onclick="document.getElementById('file').click()">
             <input type="file" id="file" accept=".bin" style="display: none">
@@ -40,9 +41,9 @@
         <div class="options">
             <label>Velocidade:
                 <select id="baudrate">
-                    <option value="115200">115200 (Lento/Seguro)</option>
+                    <option value="115200">115200 (Seguro)</option>
                     <option value="230400">230400 (Médio)</option>
-                    <option value="460800" selected>460800 (Rápido - Padrão S2)</option>
+                    <option value="460800" selected>460800 (Padrão S2)</option>
                     <option value="921600">921600 (Turbo)</option>
                 </select>
             </label>
@@ -52,7 +53,7 @@
         <div id="log" class="log">A aguardar início...</div>
     </div>
 
-    <!-- VOLTAMOS AO MÓDULO para corrigir o erro de sintaxe -->
+    <!-- Módulo v0.2.0 (Base Estável) -->
     <script type="module">
         import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.2.0/bundle.js';
 
@@ -61,11 +62,10 @@
         const baudSelect = document.getElementById('baudrate');
         let firmwareData = null;
 
-        // Terminal Simulado (Captura logs internos da biblioteca)
         const term = {
             clean: () => {},
             writeLine: (d) => { log("LIB: " + d); },
-            write: (d) => { /* log("RAW: " + d); */ }
+            write: (d) => { }
         };
 
         function log(msg) {
@@ -83,7 +83,7 @@
                 document.getElementById('file-label').style.color = '#2563eb';
                 btn.disabled = false;
                 btn.innerText = "LIGAR E ATUALIZAR";
-                log(`> Ficheiro carregado. Clique no botão azul.`);
+                log(`> Ficheiro carregado (${file.size} bytes).`);
             };
             reader.readAsArrayBuffer(file);
         });
@@ -101,22 +101,27 @@
                 log("> Porta selecionada. A iniciar...");
 
                 const transport = new Transport(device);
+                // Tenta conectar a 115200 primeiro para o handshake, depois sobe
                 const esploader = new ESPLoader(transport, baudRate, term);
 
                 btn.disabled = true;
                 btn.innerText = "A LIGAR...";
                 
-                log("> A conectar...");
+                log("> A conectar (Modo USB Reset)...");
                 
-                // Tenta conectar. Se o dispositivo estiver em modo App, ele vai resetar.
-                try {
-                    await esploader.main_fn();
-                    await esploader.flash_id();
-                } catch (err) {
-                    // Se falhar aqui, pode ser porque o dispositivo reiniciou (ejetou)
-                    // ou porque o reset falhou.
-                    console.error(err);
-                    throw new Error("Falha na conexão inicial. Se o pedal reiniciou, tente novamente.");
+                // ESTRATÉGIA V30: Tentar conectar repetidamente se falhar a primeira
+                // Muitos S2 precisam de 2-3 tentativas para sincronizar o bootloader
+                for (let i = 0; i < 3; i++) {
+                    try {
+                        // 'usb_reset' é menos agressivo que 'default_reset' para S2
+                        await esploader.main_fn({ mode: 'usb_reset' });
+                        await esploader.flash_id();
+                        break; // Sucesso! Sai do loop
+                    } catch (e) {
+                        if (i === 2) throw e; // Se falhar na 3ª, desiste
+                        log(`> Tentativa ${i+1} falhou. A tentar novamente...`);
+                        await new Promise(r => setTimeout(r, 1000)); // Espera 1s
+                    }
                 }
 
                 log("> ✅ Chip detetado: " + esploader.chip.CHIP_NAME);
@@ -125,7 +130,6 @@
                 const fileArray = [{ data: firmwareData, address: 0x10000 }];
                 btn.innerText = "A GRAVAR... NÃO DESLIGUE";
                 
-                // Gravação
                 await esploader.write_flash(
                     fileArray,
                     'keep', 'keep', 'keep', false, true,
@@ -141,7 +145,6 @@
                 btn.style.backgroundColor = "#16a34a";
                 btn.disabled = false;
 
-                // Reset Final
                 try {
                     await transport.setDTR(false);
                     await transport.setRTS(true);
@@ -157,20 +160,18 @@
                 
                 log(`> ❌ ERRO: ${msg}`);
                 
-                if (msg.includes("Timeout")) {
-                    log("> ERRO DE TIMEOUT.");
-                    log("> Solução 1: Tente selecionar uma velocidade menor (ex: 230400).");
-                    log("> Solução 2: Desconecte e reconecte o cabo USB.");
+                if (msg.includes("Timeout") || msg.includes("No serial data")) {
+                    log("> ERRO DE COMUNICAÇÃO.");
+                    log("> Tente baixar a velocidade para 115200.");
                     btn.innerText = "TENTAR NOVAMENTE";
+                    btn.className = "btn retry";
                     btn.disabled = false;
-                    btn.style.backgroundColor = "#f59e0b";
                 } else if (msg.includes("NetworkError") || msg.includes("lost") || msg.includes("disconnect")) {
                     log("> O pedal reiniciou (Disco Ejetado).");
-                    log("> Isto é normal na primeira tentativa se ele não estava em modo Boot.");
-                    log("> CLIQUE EM 'TENTAR NOVAMENTE' AGORA.");
+                    log("> Isto é normal. CLIQUE EM 'TENTAR NOVAMENTE' AGORA.");
                     btn.innerText = "TENTAR NOVAMENTE";
+                    btn.className = "btn retry";
                     btn.disabled = false;
-                    btn.style.backgroundColor = "#f59e0b";
                 } else {
                     btn.innerText = "ERRO - TENTE DE NOVO";
                     btn.disabled = false;
@@ -181,10 +182,3 @@
     </script>
 </body>
 </html>
-```I made some changes. Corrigi o erro de sintaxe voltando a usar o carregamento via módulo (`type="module"`), que é obrigatório para a biblioteca `esptool-js` funcionar no navegador moderno. Adicionei também um seletor de velocidade para que possa ajustar entre 115200 e 460800 caso encontre problemas de "Timeout".
-
-**Instruções:**
-1.  Atualize o ficheiro.
-2.  Tente primeiro com a velocidade padrão (**460800**).
-3.  Se der "Timeout", mude para **230400** ou **115200** e tente de novo.
-4.  Se der erro de "Disco Ejetado" (reinício), clique imediatamente em **TENTAR NOVAMENTE** assim que o botão ficar amarelo.
