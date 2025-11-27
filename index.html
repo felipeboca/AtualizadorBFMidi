@@ -13,18 +13,29 @@
         .btn { background: #2563eb; color: white; border: none; padding: 16px; width: 100%; border-radius: 10px; font-weight: 600; cursor: pointer; font-size: 16px; margin-top: 15px; transition: all 0.2s; }
         .btn:disabled { background: #e2e8f0; color: #94a3b8; cursor: not-allowed; }
         .btn:hover:not(:disabled) { background: #1d4ed8; }
+        .btn.warn { background: #f59e0b; }
         
-        .log { background: #1e1e1e; color: #4ade80; padding: 15px; border-radius: 10px; text-align: left; font-family: 'SF Mono', monospace; height: 300px; overflow-y: auto; margin-top: 20px; font-size: 11px; line-height: 1.5; white-space: pre-wrap; border: 1px solid #333; }
+        .log { background: #1e1e1e; color: #e2e8f0; padding: 15px; border-radius: 10px; text-align: left; font-family: 'SF Mono', monospace; height: 300px; overflow-y: auto; margin-top: 20px; font-size: 11px; line-height: 1.5; white-space: pre-wrap; border: 1px solid #333; }
         
         .file-box { border: 2px dashed #cbd5e1; padding: 30px; border-radius: 12px; margin: 20px 0; cursor: pointer; background: #f8fafc; transition: all 0.2s; }
         .file-box:hover { background: #eff6ff; border-color: #2563eb; }
+        
+        .help-box { background: #fff7ed; border-left: 4px solid #f97316; padding: 10px; text-align: left; font-size: 0.9em; margin-bottom: 15px; color: #9a3412; display: none; }
     </style>
 </head>
 <body>
 
     <div class="box">
         <h1>Atualizador BFMIDI</h1>
-        <p class="subtitle">Versão v23.0 (Transporte Manual)</p>
+        <p class="subtitle">Versão v24.0 (Velocidade Alta 460800)</p>
+
+        <div id="help-box" class="help-box">
+            <b>⚠️ Pedal não aparece?</b><br>
+            1. Mantenha pressionado o botão <b>0</b> na placa interna.<br>
+            2. Dê um clique no botão <b>RST</b>.<br>
+            3. Solte o botão <b>0</b>.<br>
+            4. Tente conectar novamente.
+        </div>
 
         <div class="file-box" onclick="document.getElementById('file').click()">
             <input type="file" id="file" accept=".bin" style="display: none">
@@ -38,48 +49,15 @@
         <div id="log" class="log">A aguardar início...</div>
     </div>
 
+    <!-- Biblioteca v0.2.0: A única que carrega sem erros no seu Chrome -->
     <script type="module">
-        // Importamos apenas o ESPLoader da versão moderna
-        import { ESPLoader } from 'https://unpkg.com/esptool-js@0.5.4/bundle.js';
+        import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.2.0/bundle.js';
 
         const btn = document.getElementById('btn');
         const logBox = document.getElementById('log');
+        const helpBox = document.getElementById('help-box');
         let firmwareData = null;
 
-        // --- CLASSE TRANSPORT MANUAL (Correção do erro 'undefined') ---
-        class ManualTransport {
-            constructor(device) {
-                this.device = device;
-                this.tracing = false;
-                this.slip_reader_enabled = false;
-                this.left_over = new Uint8Array(0);
-            }
-            get_info() { return "WebSerial Transport"; }
-            async getInfo() { return this.device.getInfo(); } // A função que falhava!
-            async getPid() { return this.device.getInfo().usbProductId; }
-            
-            async connect(baud = 115200) {
-                await this.device.open({ baudRate: baud });
-                this.baudrate = baud;
-            }
-            
-            async disconnect() { await this.device.close(); }
-            
-            async write(data) { await this.device.transferOut(1, data); }
-            
-            async read(timeout = 0) {
-                // Implementação simplificada de leitura
-                // Nota: O ESPLoader gere o loop de leitura, aqui só precisamos expor a interface
-                // Mas para garantir compatibilidade total, vamos deixar o ESPLoader usar o device diretamente se possível
-                // ou confiar que ele chama o .device.transferIn internamente se detetar WebSerial
-                return null; 
-            }
-            
-            async setRTS(state) { await this.device.setSignals({ requestToSend: state }); }
-            async setDTR(state) { await this.device.setSignals({ dataTerminalReady: state }); }
-        }
-
-        // Terminal Simulado
         const term = {
             clean: () => {},
             writeLine: (d) => { log("LIB: " + d); },
@@ -101,52 +79,45 @@
                 document.getElementById('file-label').style.color = '#2563eb';
                 btn.disabled = false;
                 btn.innerText = "LIGAR E ATUALIZAR";
-                log(`> Ficheiro carregado. Clique no botão azul.`);
+                log(`> Ficheiro pronto. Clique no botão azul.`);
             };
             reader.readAsArrayBuffer(file);
         });
 
         btn.addEventListener('click', async () => {
-            if(btn.innerText.includes("A LIGAR") || btn.innerText.includes("A GRAVAR")) return;
+            if(btn.innerText.includes("...")) return;
 
             try {
                 if (!navigator.serial) throw new Error("Navegador incompatível. Use Chrome/Edge.");
 
                 log("> A solicitar porta USB...");
+                
+                // Se o utilizador cancelar ou não houver porta, isto lança erro
                 const device = await navigator.serial.requestPort();
                 log("> Porta selecionada.");
+                helpBox.style.display = 'none'; // Esconde ajuda se conectou
 
-                // TRUQUE: Usamos a classe Transport original da biblioteca se disponível,
-                // mas aplicamos o patch na hora.
-                // Vamos importar o Transport original dinamicamente para ter acesso à classe real
-                const module = await import('https://unpkg.com/esptool-js@0.5.4/bundle.js');
-                const OrigTransport = module.Transport;
+                const transport = new Transport(device);
                 
-                const transport = new OrigTransport(device);
-                
-                // PATCH CRÍTICO: Garantir que o dispositivo está lá
-                if (!transport.device) {
-                    console.log("Aplicando patch manual...");
-                    transport.device = device;
-                }
-
-                // Loader com velocidade alta para S2
-                const esploader = new ESPLoader(transport, 921600, term);
+                // 460800: Velocidade alta para evitar Timeout no envio do Stub
+                // Esta foi a velocidade usada no seu log de sucesso
+                const esploader = new ESPLoader(transport, 460800, term);
 
                 btn.disabled = true;
                 btn.innerText = "A LIGAR...";
-                log("> A conectar (921600 baud)...");
+                log("> A conectar (460800 baud)...");
 
-                // Conexão
-                await esploader.main_fn({ mode: 'default' });
+                // Conexão padrão v0.2.0
+                await esploader.main_fn();
                 await esploader.flash_id();
 
-                log("> ✅ Chip detetado: " + esploader.chip.CHIP_NAME);
+                log("> ✅ SUCESSO! Chip detetado: " + esploader.chip.CHIP_NAME);
                 log("> A preparar gravação...");
 
                 const fileArray = [{ data: firmwareData, address: 0x10000 }];
                 btn.innerText = "A GRAVAR... NÃO DESLIGUE";
                 
+                // Gravação
                 await esploader.write_flash(
                     fileArray,
                     'keep', 'keep', 'keep', false, true,
@@ -162,6 +133,7 @@
                 btn.style.backgroundColor = "#16a34a";
                 btn.disabled = false;
 
+                // Reset
                 try {
                     await transport.setDTR(false);
                     await transport.setRTS(true);
@@ -177,9 +149,12 @@
                 
                 log(`> ❌ ERRO: ${msg}`);
                 
-                if (msg.includes("NetworkError") || msg.includes("lost") || msg.includes("disconnect")) {
-                    log("> O pedal reiniciou. Se a gravação terminou, está tudo bem.");
-                    log("> Se não, CLIQUE EM TENTAR NOVAMENTE.");
+                // Lógica de ajuda se o dispositivo não for encontrado
+                if (msg.includes("No port selected")) {
+                    helpBox.style.display = 'block';
+                }
+                else if (msg.includes("Timeout")) {
+                    log("> ERRO DE TIMEOUT: Tente novamente, o chip já deve estar acordado.");
                     btn.innerText = "TENTAR NOVAMENTE";
                     btn.disabled = false;
                     btn.style.backgroundColor = "#f59e0b";
@@ -187,6 +162,11 @@
                     btn.innerText = "ERRO - TENTE DE NOVO";
                     btn.disabled = false;
                     btn.style.backgroundColor = "#dc2626";
+                    
+                    // Se der erro desconhecido, sugere o reset físico
+                    if (!msg.includes("User cancelled")) {
+                        helpBox.style.display = 'block';
+                    }
                 }
             }
         });
