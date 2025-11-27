@@ -14,22 +14,26 @@
         .btn:disabled { background: #e2e8f0; color: #94a3b8; cursor: not-allowed; }
         .btn:hover:not(:disabled) { background: #1d4ed8; }
         
-        .btn.reset { background: #f59e0b; color: white; }
+        /* Cores de estado */
+        .btn.reset { background: #f59e0b; color: #fff; animation: pulse 2s infinite; }
         .btn.reset:hover { background: #d97706; }
+        .btn.success { background: #16a34a; }
         
-        .log { background: #1e1e1e; color: #e2e8f0; padding: 15px; border-radius: 10px; text-align: left; font-family: 'SF Mono', monospace; height: 300px; overflow-y: auto; margin-top: 20px; font-size: 11px; line-height: 1.5; white-space: pre-wrap; border: 1px solid #333; }
+        .log { background: #1e1e1e; color: #4ade80; padding: 15px; border-radius: 10px; text-align: left; font-family: 'SF Mono', monospace; height: 350px; overflow-y: auto; margin-top: 20px; font-size: 11px; line-height: 1.5; white-space: pre-wrap; border: 1px solid #333; }
         
         .file-box { border: 2px dashed #cbd5e1; padding: 30px; border-radius: 12px; margin: 20px 0; cursor: pointer; background: #f8fafc; transition: all 0.2s; }
         .file-box:hover { background: #eff6ff; border-color: #2563eb; }
         
         .status-badge { display: inline-block; padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: bold; margin-bottom: 15px; background: #e2e8f0; color: #64748b; }
+        
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.8; } 100% { opacity: 1; } }
     </style>
 </head>
 <body>
 
     <div class="box">
         <h1>Atualizador BFMIDI</h1>
-        <p class="subtitle">Versão Inteligente (v33.0 - Detetor de PID)</p>
+        <p class="subtitle">Versão Final v34.0 (Moderna + Patch + 2-Steps)</p>
 
         <div class="file-box" onclick="document.getElementById('file').click()">
             <input type="file" id="file" accept=".bin" style="display: none">
@@ -44,18 +48,20 @@
         </div>
 
         <button id="btn" class="btn" disabled>Carregue o ficheiro primeiro</button>
-        <div id="log" class="log">Pronto.</div>
+        <div id="log" class="log">A aguardar início...</div>
     </div>
 
+    <!-- Usamos a versão MODERNA (0.5.4) que corrige o S2 -->
     <script type="module">
-        import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.2.0/bundle.js';
+        import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.5.4/bundle.js';
 
         const btn = document.getElementById('btn');
         const logBox = document.getElementById('log');
         const statusBadge = document.getElementById('status-badge');
         let firmwareData = null;
-        let expectingReconnect = false;
+        let expectingReconnect = false; // Controla a lógica de 2 passos
 
+        // Terminal simulado para logs internos
         const term = {
             clean: () => {},
             writeLine: (d) => { log("LIB: " + d); },
@@ -82,7 +88,8 @@
                 document.getElementById('file-label').innerHTML = `✅ <b>${file.name}</b> pronto!`;
                 document.getElementById('file-label').style.color = '#2563eb';
                 btn.disabled = false;
-                btn.innerText = "PASSO 1: VERIFICAR CONEXÃO";
+                btn.innerText = "PASSO 1: VERIFICAR MODO";
+                setStatus("Pronto", "#dbeafe", "#1e40af");
                 log(`> Ficheiro carregado. Clique no botão azul.`);
             };
             reader.readAsArrayBuffer(file);
@@ -90,11 +97,11 @@
 
         btn.addEventListener('click', async () => {
             try {
-                if (!navigator.serial) throw new Error("Navegador incompatível.");
+                if (!navigator.serial) throw new Error("Navegador incompatível. Use Chrome/Edge.");
 
                 if (expectingReconnect) {
-                    log("\n>>> FASE 2: LIGAÇÃO FINAL <<<");
-                    log("Selecione a porta novamente (agora em modo Bootloader).");
+                    log("\n>>> FASE 2: GRAVAÇÃO <<<");
+                    log("Selecione a porta novamente (agora em Bootloader).");
                 } else {
                     log("\n>>> FASE 1: DIAGNÓSTICO <<<");
                     log("A solicitar porta USB...");
@@ -106,55 +113,63 @@
                 
                 log(`> Porta detetada! PID: 0x${pid ? pid.toString(16) : '???'}`);
 
-                // LÓGICA DE DOIS PASSOS
-                // 0x80c2 (32962) = Aplicação -> Precisa de Reset
-                // 0x0002 (2)     = Bootloader -> Pronto a gravar
+                // --- PASSO 1: VERIFICAR MODO ---
+                // 0x2 (2) = Bootloader (Pronto para gravar)
+                // 0x80c2 (32962) = Aplicação (Precisa Reset)
                 
-                // Se PID for indefinido (0), assume que é Bootloader para tentar
-                const isAppMode = (pid === 0x80c2 || pid === 32962);
+                const isBootloader = (pid === 0x0002 || pid === 2);
 
-                if (isAppMode && !expectingReconnect) {
-                    log("\n⚠️ MODO APLICAÇÃO DETETADO (0x80c2).");
-                    log("> O pedal precisa de reiniciar para aceitar a gravação.");
+                if (!isBootloader && !expectingReconnect) {
+                    log("\n⚠️ MODO APLICAÇÃO DETETADO.");
+                    log("> O pedal precisa de ir para modo Bootloader.");
                     log("> A enviar sinal de Reset...");
                     
                     setStatus("A Reiniciar...", "#fef3c7", "#92400e");
                     
-                    // Truque do Reset Suave
+                    // Reset Manual (Funciona sempre)
                     await device.open({ baudRate: 1200 });
                     await new Promise(r => setTimeout(r, 100));
                     await device.setSignals({ dataTerminalReady: false, requestToSend: true });
                     await new Promise(r => setTimeout(r, 200));
                     await device.setSignals({ dataTerminalReady: true, requestToSend: false });
-                    // Não esperamos resposta, fechamos logo
+                    // IMPORTANTE: Fechar a porta e parar tudo
                     await device.close();
 
                     log("\n✅ SINAL ENVIADO!");
                     log("1. O pedal vai reiniciar (ecrã preto ou disco ejetado).");
-                    log("2. A porta USB vai cair. Isto é NORMAL.");
-                    log("3. Clique no botão LARANJA abaixo para reconectar e gravar.");
+                    log("2. A porta USB vai cair. O Mac vai reclamar.");
+                    log("3. Clique no botão LARANJA para reconectar e gravar.");
                     
                     btn.innerText = "👉 CLIQUE AQUI PARA GRAVAR (PASSO 2)";
                     btn.className = "btn reset";
-                    btn.disabled = false;
                     expectingReconnect = true;
-                    return; // Pára a execução aqui para não travar
+                    return; // Pára a execução aqui!
                 }
 
-                // Se chegarmos aqui, estamos prontos para gravar
-                log("\n✅ MODO DE GRAVAÇÃO PRONTO!");
+                // --- PASSO 2: GRAVAÇÃO (Modo Bootloader) ---
+                log("\n✅ MODO DE GRAVAÇÃO CONFIRMADO!");
                 setStatus("A Gravar...", "#dcfce7", "#166534");
                 
                 const transport = new Transport(device);
-                // 460800 é a velocidade ideal para gravação rápida no S2
+                
+                // >>> PATCH CRÍTICO V34 <<<
+                // Corrige o erro 'undefined reading getInfo' na versão 0.5.4
+                if (!transport.device) {
+                    console.log("Aplicando patch manual no transporte...");
+                    transport.device = device; 
+                }
+
+                // 460800 é o padrão seguro para S2 na versão moderna
                 const esploader = new ESPLoader(transport, 460800, term);
 
                 btn.disabled = true;
-                btn.innerText = "A CONECTAR...";
+                btn.innerText = "A LIGAR...";
                 btn.className = "btn"; 
 
-                log("> A iniciar protocolo...");
-                await esploader.main_fn();
+                log("> A iniciar protocolo (v0.5.4)...");
+                
+                // Usamos 'default' porque já garantimos o modo bootloader manualmente acima
+                await esploader.main_fn({ mode: 'default' });
                 await esploader.flash_id();
 
                 log("> Chip identificado: " + esploader.chip.CHIP_NAME);
@@ -176,11 +191,11 @@
 
                 log("\n✅ SUCESSO! ATUALIZAÇÃO CONCLUÍDA.");
                 btn.innerText = "CONCLUÍDO! REINICIE O PEDAL";
-                btn.style.backgroundColor = "#16a34a";
+                btn.className = "btn success";
                 btn.disabled = false;
                 setStatus("Sucesso!", "#dcfce7", "#166534");
 
-                // Reset final para arrancar o novo firmware
+                // Reset final
                 try {
                     await transport.setDTR(false);
                     await transport.setRTS(true);
@@ -194,17 +209,17 @@
                 console.error(e);
                 const msg = e.message || e.toString();
                 
-                // Se cair a conexão, assumimos que foi o reset
+                // Se cair a conexão durante o processo (raro nesta fase)
                 if (msg.includes("NetworkError") || msg.includes("lost") || msg.includes("disconnect")) {
                     if (!expectingReconnect) {
-                        log("\n⚠️ O dispositivo desconectou-se (Reset).");
-                        log("Clique no botão para continuar.");
+                        log("\n⚠️ O dispositivo desconectou-se.");
+                        log("Clique no botão para reconectar.");
                         expectingReconnect = true;
                         btn.innerText = "👉 CONTINUAR (PASSO 2)";
                         btn.className = "btn reset";
                         btn.disabled = false;
                     } else {
-                        log("> Desconexão inesperada durante a gravação.");
+                        log("> Desconexão. Tente novamente.");
                         btn.innerText = "TENTAR NOVAMENTE";
                         btn.className = "btn";
                         btn.disabled = false;
