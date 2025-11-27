@@ -6,26 +6,30 @@
     <title>Atualizador BFMIDI</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f0f2f5; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
-        .box { background: white; padding: 2.5rem; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 650px; text-align: center; }
+        .box { background: white; padding: 2.5rem; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 600px; text-align: center; }
         h1 { color: #111; margin-bottom: 0.5rem; }
         .subtitle { color: #666; margin-bottom: 2rem; font-size: 0.95rem; }
         
         .btn { background: #2563eb; color: white; border: none; padding: 16px; width: 100%; border-radius: 10px; font-weight: 600; cursor: pointer; font-size: 16px; margin-top: 15px; transition: all 0.2s; }
         .btn:disabled { background: #e2e8f0; color: #94a3b8; cursor: not-allowed; }
         .btn:hover:not(:disabled) { background: #1d4ed8; }
-        .btn.retry { background: #f59e0b; }
         
-        .log { background: #1e1e1e; color: #e2e8f0; padding: 15px; border-radius: 10px; text-align: left; font-family: 'SF Mono', monospace; height: 350px; overflow-y: auto; margin-top: 20px; font-size: 11px; line-height: 1.5; white-space: pre-wrap; border: 1px solid #333; }
+        .btn.reset { background: #f59e0b; color: white; }
+        .btn.reset:hover { background: #d97706; }
+        
+        .log { background: #1e1e1e; color: #e2e8f0; padding: 15px; border-radius: 10px; text-align: left; font-family: 'SF Mono', monospace; height: 300px; overflow-y: auto; margin-top: 20px; font-size: 11px; line-height: 1.5; white-space: pre-wrap; border: 1px solid #333; }
         
         .file-box { border: 2px dashed #cbd5e1; padding: 30px; border-radius: 12px; margin: 20px 0; cursor: pointer; background: #f8fafc; transition: all 0.2s; }
         .file-box:hover { background: #eff6ff; border-color: #2563eb; }
+        
+        .status-badge { display: inline-block; padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: bold; margin-bottom: 15px; background: #e2e8f0; color: #64748b; }
     </style>
 </head>
 <body>
 
     <div class="box">
         <h1>Atualizador BFMIDI</h1>
-        <p class="subtitle">Versão v32.0 (Velocidade Automática)</p>
+        <p class="subtitle">Versão Inteligente (v33.0 - Detetor de PID)</p>
 
         <div class="file-box" onclick="document.getElementById('file').click()">
             <input type="file" id="file" accept=".bin" style="display: none">
@@ -35,17 +39,22 @@
             </div>
         </div>
 
+        <div id="status-area">
+            <span id="status-badge" class="status-badge">Aguardar ficheiro...</span>
+        </div>
+
         <button id="btn" class="btn" disabled>Carregue o ficheiro primeiro</button>
-        <div id="log" class="log">A aguardar início...</div>
+        <div id="log" class="log">Pronto.</div>
     </div>
 
-    <!-- Módulo v0.2.0 (Base Estável) -->
     <script type="module">
         import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.2.0/bundle.js';
 
         const btn = document.getElementById('btn');
         const logBox = document.getElementById('log');
+        const statusBadge = document.getElementById('status-badge');
         let firmwareData = null;
+        let expectingReconnect = false;
 
         const term = {
             clean: () => {},
@@ -58,6 +67,12 @@
             logBox.scrollTop = logBox.scrollHeight;
         }
 
+        function setStatus(text, bg, color) {
+            statusBadge.innerText = text;
+            statusBadge.style.backgroundColor = bg;
+            statusBadge.style.color = color;
+        }
+
         document.getElementById('file').addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
@@ -67,80 +82,105 @@
                 document.getElementById('file-label').innerHTML = `✅ <b>${file.name}</b> pronto!`;
                 document.getElementById('file-label').style.color = '#2563eb';
                 btn.disabled = false;
-                btn.innerText = "LIGAR E ATUALIZAR";
+                btn.innerText = "PASSO 1: VERIFICAR CONEXÃO";
                 log(`> Ficheiro carregado. Clique no botão azul.`);
             };
             reader.readAsArrayBuffer(file);
         });
 
         btn.addEventListener('click', async () => {
-            if(btn.innerText.includes("...")) return;
-
             try {
-                if (!navigator.serial) throw new Error("Navegador incompatível. Use Chrome/Edge.");
+                if (!navigator.serial) throw new Error("Navegador incompatível.");
 
-                log(`> A solicitar porta USB...`);
+                if (expectingReconnect) {
+                    log("\n>>> FASE 2: LIGAÇÃO FINAL <<<");
+                    log("Selecione a porta novamente (agora em modo Bootloader).");
+                } else {
+                    log("\n>>> FASE 1: DIAGNÓSTICO <<<");
+                    log("A solicitar porta USB...");
+                }
+
                 const device = await navigator.serial.requestPort();
-                log("> Porta selecionada. A iniciar...");
+                const info = device.getInfo();
+                const pid = info.usbProductId;
+                
+                log(`> Porta detetada! PID: 0x${pid ? pid.toString(16) : '???'}`);
 
-                const transport = new Transport(device);
+                // LÓGICA DE DOIS PASSOS
+                // 0x80c2 (32962) = Aplicação -> Precisa de Reset
+                // 0x0002 (2)     = Bootloader -> Pronto a gravar
                 
-                // --- LÓGICA ADAPTATIVA ---
-                let esploader = null;
-                let connected = false;
-                
-                // Tenta primeiro a 460800 (Ideal para upload rápido)
-                try {
-                    log("> Tentativa 1: Velocidade 460800...");
-                    esploader = new ESPLoader(transport, 460800, term);
-                    btn.disabled = true;
-                    btn.innerText = "A LIGAR...";
+                // Se PID for indefinido (0), assume que é Bootloader para tentar
+                const isAppMode = (pid === 0x80c2 || pid === 32962);
+
+                if (isAppMode && !expectingReconnect) {
+                    log("\n⚠️ MODO APLICAÇÃO DETETADO (0x80c2).");
+                    log("> O pedal precisa de reiniciar para aceitar a gravação.");
+                    log("> A enviar sinal de Reset...");
                     
-                    await esploader.main_fn();
-                    await esploader.flash_id();
-                    connected = true;
-                } catch (e) {
-                    log("> Falha a 460800. A tentar velocidade segura...");
-                    try {
-                        await transport.disconnect();
-                    } catch(err) {}
-                    await new Promise(r => setTimeout(r, 500));
+                    setStatus("A Reiniciar...", "#fef3c7", "#92400e");
+                    
+                    // Truque do Reset Suave
+                    await device.open({ baudRate: 1200 });
+                    await new Promise(r => setTimeout(r, 100));
+                    await device.setSignals({ dataTerminalReady: false, requestToSend: true });
+                    await new Promise(r => setTimeout(r, 200));
+                    await device.setSignals({ dataTerminalReady: true, requestToSend: false });
+                    // Não esperamos resposta, fechamos logo
+                    await device.close();
+
+                    log("\n✅ SINAL ENVIADO!");
+                    log("1. O pedal vai reiniciar (ecrã preto ou disco ejetado).");
+                    log("2. A porta USB vai cair. Isto é NORMAL.");
+                    log("3. Clique no botão LARANJA abaixo para reconectar e gravar.");
+                    
+                    btn.innerText = "👉 CLIQUE AQUI PARA GRAVAR (PASSO 2)";
+                    btn.className = "btn reset";
+                    btn.disabled = false;
+                    expectingReconnect = true;
+                    return; // Pára a execução aqui para não travar
                 }
 
-                // Se falhou, tenta a 115200 (Lento mas seguro)
-                if (!connected) {
-                    try {
-                        log("> Tentativa 2: Velocidade 115200...");
-                        esploader = new ESPLoader(transport, 115200, term);
-                        await esploader.main_fn();
-                        await esploader.flash_id();
-                        connected = true;
-                    } catch (e) {
-                        throw e; // Se falhar aqui, desiste
-                    }
-                }
+                // Se chegarmos aqui, estamos prontos para gravar
+                log("\n✅ MODO DE GRAVAÇÃO PRONTO!");
+                setStatus("A Gravar...", "#dcfce7", "#166534");
+                
+                const transport = new Transport(device);
+                // 460800 é a velocidade ideal para gravação rápida no S2
+                const esploader = new ESPLoader(transport, 460800, term);
 
-                log("> ✅ Chip detetado: " + esploader.chip.CHIP_NAME);
-                log("> A preparar gravação...");
+                btn.disabled = true;
+                btn.innerText = "A CONECTAR...";
+                btn.className = "btn"; 
+
+                log("> A iniciar protocolo...");
+                await esploader.main_fn();
+                await esploader.flash_id();
+
+                log("> Chip identificado: " + esploader.chip.CHIP_NAME);
+                log("> A iniciar transferência...");
+                
+                btn.innerText = "A GRAVAR...";
 
                 const fileArray = [{ data: firmwareData, address: 0x10000 }];
-                btn.innerText = "A GRAVAR... NÃO DESLIGUE";
                 
                 await esploader.write_flash(
                     fileArray,
                     'keep', 'keep', 'keep', false, true,
                     (fileIndex, written, total) => {
                         const percent = Math.round((written / total) * 100);
-                        btn.innerText = `GRAVANDO: ${percent}%`;
-                        if (percent % 5 === 0) log(`> Progresso: ${percent}%`);
+                        btn.innerText = `GRAVANDO ${percent}%`;
+                        if (percent % 10 === 0) log(`> Progresso: ${percent}%`);
                     }
                 );
 
-                log("> ✅ GRAVAÇÃO CONCLUÍDA!");
-                btn.innerText = "SUCESSO! REINICIE O PEDAL";
+                log("\n✅ SUCESSO! ATUALIZAÇÃO CONCLUÍDA.");
+                btn.innerText = "CONCLUÍDO! REINICIE O PEDAL";
                 btn.style.backgroundColor = "#16a34a";
                 btn.disabled = false;
+                setStatus("Sucesso!", "#dcfce7", "#166534");
 
+                // Reset final para arrancar o novo firmware
                 try {
                     await transport.setDTR(false);
                     await transport.setRTS(true);
@@ -154,24 +194,26 @@
                 console.error(e);
                 const msg = e.message || e.toString();
                 
-                log(`> ❌ ERRO: ${msg}`);
-                
+                // Se cair a conexão, assumimos que foi o reset
                 if (msg.includes("NetworkError") || msg.includes("lost") || msg.includes("disconnect")) {
-                    log("> O pedal reiniciou (Disco Ejetado).");
-                    log("> Isto é normal. CLIQUE EM 'TENTAR NOVAMENTE' AGORA.");
-                    btn.innerText = "TENTAR NOVAMENTE";
-                    btn.className = "btn retry";
-                    btn.disabled = false;
-                } else if (msg.includes("Timeout")) {
-                    log("> Erro de Timeout persistente.");
-                    log("> Tente desconectar e reconectar o cabo USB.");
-                    btn.innerText = "TENTAR NOVAMENTE";
-                    btn.className = "btn retry";
-                    btn.disabled = false;
+                    if (!expectingReconnect) {
+                        log("\n⚠️ O dispositivo desconectou-se (Reset).");
+                        log("Clique no botão para continuar.");
+                        expectingReconnect = true;
+                        btn.innerText = "👉 CONTINUAR (PASSO 2)";
+                        btn.className = "btn reset";
+                        btn.disabled = false;
+                    } else {
+                        log("> Desconexão inesperada durante a gravação.");
+                        btn.innerText = "TENTAR NOVAMENTE";
+                        btn.className = "btn";
+                        btn.disabled = false;
+                    }
                 } else {
+                    log(`> ❌ ERRO: ${msg}`);
                     btn.innerText = "ERRO - TENTE DE NOVO";
+                    btn.className = "btn";
                     btn.disabled = false;
-                    btn.style.backgroundColor = "#dc2626";
                 }
             }
         });
