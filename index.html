@@ -13,22 +13,26 @@
         .btn { background: #2563eb; color: white; border: none; padding: 16px; width: 100%; border-radius: 10px; font-weight: 600; cursor: pointer; font-size: 16px; margin-top: 15px; transition: all 0.2s; }
         .btn:disabled { background: #e2e8f0; color: #94a3b8; cursor: not-allowed; }
         .btn:hover:not(:disabled) { background: #1d4ed8; }
-        .btn.warn { background: #f59e0b; }
+        
+        .btn.reset { background: #f59e0b; animation: pulse 2s infinite; }
+        .btn.reset:hover { background: #d97706; }
         .btn.success { background: #16a34a; }
         
-        .log { background: #1e1e1e; color: #4ade80; padding: 15px; border-radius: 10px; text-align: left; font-family: 'SF Mono', monospace; height: 300px; overflow-y: auto; margin-top: 20px; font-size: 11px; line-height: 1.5; white-space: pre-wrap; border: 1px solid #333; }
+        .log { background: #1e1e1e; color: #4ade80; padding: 15px; border-radius: 10px; text-align: left; font-family: 'SF Mono', monospace; height: 350px; overflow-y: auto; margin-top: 20px; font-size: 11px; line-height: 1.5; white-space: pre-wrap; border: 1px solid #333; }
         
         .file-box { border: 2px dashed #cbd5e1; padding: 30px; border-radius: 12px; margin: 20px 0; cursor: pointer; background: #f8fafc; transition: all 0.2s; }
         .file-box:hover { background: #eff6ff; border-color: #2563eb; }
         
         .status-badge { display: inline-block; padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: bold; margin-bottom: 15px; background: #e2e8f0; color: #64748b; }
+        
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.8; } 100% { opacity: 1; } }
     </style>
 </head>
 <body>
 
     <div class="box">
         <h1>Atualizador BFMIDI</h1>
-        <p class="subtitle">Versão Frankenstein (v35.0)</p>
+        <p class="subtitle">Versão Final v36.0 (2-Steps + Patch)</p>
 
         <div class="file-box" onclick="document.getElementById('file').click()">
             <input type="file" id="file" accept=".bin" style="display: none">
@@ -47,8 +51,7 @@
     </div>
 
     <script type="module">
-        // Importamos apenas o ESPLoader da versão moderna (0.5.4)
-        import { ESPLoader } from 'https://unpkg.com/esptool-js@0.5.4/bundle.js';
+        import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.5.4/bundle.js';
 
         const btn = document.getElementById('btn');
         const logBox = document.getElementById('log');
@@ -56,45 +59,7 @@
         let firmwareData = null;
         let expectingReconnect = false;
 
-        // --- CLASSE DE TRANSPORTE MANUAL (Resolve erro 'undefined') ---
-        class ManualTransport {
-            constructor(device) {
-                this.device = device;
-                this.tracing = false;
-                this.slip_reader_enabled = false;
-                this.left_over = new Uint8Array(0);
-                this.baudrate = 115200;
-            }
-            
-            // Funções que a biblioteca chama internamente
-            get_info() { return "ManualTransport"; }
-            async getInfo() { return this.device.getInfo(); }
-            async getPid() { return this.device.getInfo().usbProductId; }
-            
-            async connect(baud = 460800) {
-                await this.device.open({ baudRate: baud });
-                this.baudrate = baud;
-            }
-            
-            async disconnect() { await this.device.close(); }
-            
-            async write(data) { 
-                const writer = this.device.writable.getWriter();
-                await writer.write(data);
-                writer.releaseLock();
-            }
-            
-            // Implementação básica de leitura que devolve o Reader para o ESPLoader usar
-            // O ESPLoader moderno sabe lidar com WebSerial diretamente
-            async read(timeout = 0) { return null; } 
-            
-            // Sinais de controlo
-            async setRTS(state) { await this.device.setSignals({ requestToSend: state }); }
-            async setDTR(state) { await this.device.setSignals({ dataTerminalReady: state }); }
-            async sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
-        }
-
-        // Terminal Simulado
+        // Terminal simulado
         const term = {
             clean: () => {},
             writeLine: (d) => { log("LIB: " + d); },
@@ -121,7 +86,7 @@
                 document.getElementById('file-label').innerHTML = `✅ <b>${file.name}</b> pronto!`;
                 document.getElementById('file-label').style.color = '#2563eb';
                 btn.disabled = false;
-                btn.innerText = "PASSO 1: VERIFICAR MODO";
+                btn.innerText = "PASSO 1: VERIFICAR CONEXÃO";
                 setStatus("Pronto", "#dbeafe", "#1e40af");
                 log(`> Ficheiro carregado. Clique no botão azul.`);
             };
@@ -146,19 +111,18 @@
                 
                 log(`> Porta detetada! PID: 0x${pid ? pid.toString(16) : '???'}`);
 
-                // --- PASSO 1: VERIFICAR MODO ---
-                // 0x0002 (2) = Bootloader (Bom)
-                // Outros = Aplicação (Precisa Reset)
-                const isBootloader = (pid === 0x0002 || pid === 2);
+                // 0x80c2 = Aplicação (Precisa Reset) | 0x0002 = Bootloader (Pronto)
+                const isAppMode = (pid === 0x80c2 || pid === 32962);
 
-                if (!isBootloader && !expectingReconnect) {
+                // CENÁRIO A: MODO APLICAÇÃO -> FORÇAR RESET
+                if (isAppMode && !expectingReconnect) {
                     log("\n⚠️ MODO APLICAÇÃO DETETADO.");
-                    log("> O pedal precisa de ir para modo Bootloader.");
-                    log("> A enviar comando de Reset...");
+                    log("> O pedal precisa de reiniciar para modo Bootloader.");
+                    log("> A enviar sinal de Reset...");
                     
                     setStatus("A Reiniciar...", "#fef3c7", "#92400e");
                     
-                    // Reset Manual Seguro
+                    // Reset Manual
                     await device.open({ baudRate: 1200 });
                     await new Promise(r => setTimeout(r, 100));
                     await device.setSignals({ dataTerminalReady: false, requestToSend: true });
@@ -167,44 +131,48 @@
                     await device.close();
 
                     log("\n✅ RESET ENVIADO!");
-                    log("1. O pedal vai reiniciar.");
-                    log("2. O Mac vai dizer 'Disco Ejetado' (Normal).");
-                    log("3. Clique no botão LARANJA para reconectar.");
+                    log("1. O pedal vai reiniciar (ecrã preto).");
+                    log("2. O Mac vai dar 'Disco Ejetado' (Normal).");
+                    log("3. AGUARDE 3s e CLIQUE no botão LARANJA.");
                     
                     btn.innerText = "👉 CLIQUE AQUI PARA GRAVAR (PASSO 2)";
-                    btn.className = "btn warn";
+                    btn.className = "btn reset";
                     expectingReconnect = true;
-                    return; // Pára aqui!
+                    return; // PÁRA AQUI! Espera reconexão
                 }
 
-                // --- PASSO 2: GRAVAÇÃO ---
-                log("\n✅ MODO DE GRAVAÇÃO CONFIRMADO!");
+                // CENÁRIO B: MODO BOOTLOADER -> GRAVAR
+                log("\n✅ MODO DE GRAVAÇÃO PRONTO!");
                 setStatus("A Gravar...", "#dcfce7", "#166534");
                 
-                // Usamos o nosso Transporte Manual "Blindado"
-                const transport = new ManualTransport(device);
-                // 460800 é a velocidade que funcionou no log oficial
+                const transport = new Transport(device);
+                
+                // PATCH MANUAL PARA O ERRO 'UNDEFINED'
+                if (!transport.device) {
+                    console.log("Patching transport device...");
+                    transport.device = device;
+                }
+
+                // 460800 = Velocidade ideal para S2
                 const esploader = new ESPLoader(transport, 460800, term);
 
                 btn.disabled = true;
-                btn.innerText = "A LIGAR...";
+                btn.innerText = "A CONECTAR...";
                 btn.className = "btn"; 
 
-                log("> A iniciar protocolo (0.5.4 + ManualTransport)...");
+                log("> A iniciar protocolo...");
                 
-                // No modo bootloader, usamos 'no_reset' ou 'default' com cautela
-                // Como já estamos no modo certo, 'no_reset' é mais seguro
+                // 'no_reset' porque já estamos no modo certo
                 try {
                     await esploader.main_fn({ mode: 'no_reset' });
                 } catch (e) {
-                    // Se falhar, tenta default
-                    log("> Retrying with default reset...");
+                    log("> A tentar modo alternativo...");
                     await esploader.main_fn({ mode: 'default' });
                 }
                 
                 await esploader.flash_id();
 
-                log("> ✅ Chip identificado: " + esploader.chip.CHIP_NAME);
+                log("> Chip identificado: " + esploader.chip.CHIP_NAME);
                 log("> A iniciar transferência...");
                 
                 btn.innerText = "A GRAVAR...";
@@ -227,7 +195,6 @@
                 btn.disabled = false;
                 setStatus("Sucesso!", "#dcfce7", "#166534");
 
-                // Reset Final
                 try {
                     await transport.setDTR(false);
                     await transport.setRTS(true);
@@ -243,14 +210,14 @@
                 
                 if (msg.includes("NetworkError") || msg.includes("lost") || msg.includes("disconnect")) {
                     if (!expectingReconnect) {
-                        log("\n⚠️ O dispositivo desconectou-se.");
-                        log("Clique no botão para reconectar.");
+                        log("\n⚠️ O dispositivo desconectou-se (Reset).");
+                        log("Clique no botão para continuar.");
                         expectingReconnect = true;
                         btn.innerText = "👉 CONTINUAR (PASSO 2)";
-                        btn.className = "btn warn";
+                        btn.className = "btn reset";
                         btn.disabled = false;
                     } else {
-                        log("> Desconexão. Tente novamente.");
+                        log("> Desconexão inesperada.");
                         btn.innerText = "TENTAR NOVAMENTE";
                         btn.className = "btn";
                         btn.disabled = false;
